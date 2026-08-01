@@ -24,10 +24,31 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: { message: string } | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: { message: string } | null }>;
-  updateProfile: (fields: { full_name?: string; bio?: string; school?: string }) => Promise<{ error: { message: string } | null }>;
+  updateProfile: (fields: { full_name?: string; bio?: string; school?: string; avatar_url?: string }) => Promise<{ error: { message: string } | null }>;
   /** @deprecated use updateProfile instead */
   updateProfileName: (fullName: string) => Promise<{ error: { message: string } | null }>;
   refreshProfile: () => Promise<void>;
+}
+
+// ─── LocalStorage Cache Helpers ──────────────────────────────
+const CACHE_KEY = 'studyos_profile_cache';
+
+function getCachedProfile(): Profile | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedProfile(prof: Profile | null) {
+  try {
+    if (prof) localStorage.setItem(CACHE_KEY, JSON.stringify(prof));
+    else localStorage.removeItem(CACHE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 // ─── Context ────────────────────────────────────────────────
@@ -37,8 +58,16 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfileState] = useState<Profile | null>(() => getCachedProfile());
   const [loading, setLoading] = useState(true);
+
+  const setProfile = useCallback((newProf: Profile | null | ((prev: Profile | null) => Profile | null)) => {
+    setProfileState((prev) => {
+      const next = typeof newProf === 'function' ? newProf(prev) : newProf;
+      setCachedProfile(next);
+      return next;
+    });
+  }, []);
 
   // ── Fetch user profile from Supabase cloud ────────────────
   const fetchProfile = useCallback(async (authUser: User) => {
@@ -78,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {
       console.error('fetchProfile error:', e);
-      setProfile({
+      setProfile((prev) => prev || {
         id: authUser.id,
         full_name: fallbackName,
         bio: '',
@@ -88,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
       });
     }
-  }, []);
+  }, [setProfile]);
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user);
@@ -122,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => subscription.unsubscribe();
-  }, [fetchProfile]);
+  }, [fetchProfile, setProfile]);
 
   // ── Auth Actions ──────────────────────────────────────────
 
@@ -179,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   /** Save any subset of profile fields to Supabase cloud */
-  const updateProfile = async (fields: { full_name?: string; bio?: string; school?: string }) => {
+  const updateProfile = async (fields: { full_name?: string; bio?: string; school?: string; avatar_url?: string }) => {
     if (!user) return { error: { message: 'No authenticated user.' } };
 
     // Optimistic UI update
@@ -193,9 +222,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: { message: error.message } };
     }
 
-    // Keep auth user_metadata in sync when name changes
-    if (fields.full_name) {
-      await supabase.auth.updateUser({ data: { full_name: fields.full_name } });
+    // Keep auth user_metadata in sync when name or avatar changes
+    if (fields.full_name || fields.avatar_url) {
+      const meta: Record<string, any> = {};
+      if (fields.full_name) meta.full_name = fields.full_name;
+      if (fields.avatar_url) meta.avatar_url = fields.avatar_url;
+      await supabase.auth.updateUser({ data: meta });
     }
 
     return { error: null };

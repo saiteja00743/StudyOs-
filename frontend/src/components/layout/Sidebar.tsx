@@ -161,9 +161,13 @@ export function Sidebar() {
           'flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/5 bg-white/3 mt-2',
           collapsed && 'justify-center'
         )}>
-          <div className="w-7 h-7 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-            {initials}
-          </div>
+          {profile?.avatar_url ? (
+            <img src={profile.avatar_url} alt={displayName} className="w-7 h-7 rounded-full object-cover border border-white/10 flex-shrink-0" />
+          ) : (
+            <div className="w-7 h-7 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {initials}
+            </div>
+          )}
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-white truncate">{displayName}</p>

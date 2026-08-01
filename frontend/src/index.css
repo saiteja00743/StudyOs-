@@ -20,6 +20,22 @@
   --glow-accent: rgba(129, 140, 248, 0.3);
 }
 
+/* Dynamic Accent Colors */
+html[data-accent="violet"] { --brand-primary: #6d4bff; --brand-secondary: #818cf8; }
+html[data-accent="cyan"] { --brand-primary: #06b6d4; --brand-secondary: #38bdf8; }
+html[data-accent="emerald"] { --brand-primary: #10b981; --brand-secondary: #34d399; }
+html[data-accent="rose"] { --brand-primary: #f43f5e; --brand-secondary: #fb7185; }
+html[data-accent="amber"] { --brand-primary: #f59e0b; --brand-secondary: #fbbf24; }
+
+/* Light Theme support */
+html[data-theme="light"] body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+html[data-compact="true"] {
+  font-size: 14px;
+}
+
 /* ─── Base Styles ────────────────────────────────────────── */
 @layer base {
   * {

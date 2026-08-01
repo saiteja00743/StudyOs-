@@ -176,9 +176,13 @@ export function AppNavbar() {
 
               <div className="pt-4 border-t border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {displayName[0]?.toUpperCase()}
-                  </div>
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt={displayName} className="w-8 h-8 rounded-full object-cover border border-white/10 flex-shrink-0" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                      {displayName[0]?.toUpperCase()}
+                    </div>
+                  )}
                   <div className="truncate">
                     <p className="text-xs font-semibold text-white truncate">{displayName}</p>
                     <p className="text-2xs text-slate-500 truncate">{user?.email}</p>
