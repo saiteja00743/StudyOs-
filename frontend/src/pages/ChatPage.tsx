@@ -9,6 +9,7 @@ import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ApiKeyModal } from '@/components/chat/ApiKeyModal';
 import { chatService } from '@/services/chatService';
 import { hasApiKey } from '@/services/geminiClient';
+import { scopedKey } from '@/services/userScope';
 import { ChatMessage as ChatMessageType, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
 import { cn } from '@/utils/cn';
 
@@ -22,7 +23,7 @@ const SUBJECT_OPTIONS: { id: SubjectFocus; label: string; icon: React.ElementTyp
 
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem('studyos_chat_sessions');
+    const saved = localStorage.getItem(scopedKey('studyos_chat_sessions'));
     return saved ? JSON.parse(saved) : [];
   });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -43,9 +44,9 @@ export function ChatPage() {
     setSuggestedQuestions(chatService.getSuggestedQuestions());
   }, []);
 
-  // Save sessions to localStorage
+  // Save sessions to localStorage (user-scoped)
   useEffect(() => {
-    localStorage.setItem('studyos_chat_sessions', JSON.stringify(sessions));
+    localStorage.setItem(scopedKey('studyos_chat_sessions'), JSON.stringify(sessions));
   }, [sessions]);
 
   // Auto-scroll to bottom on new messages

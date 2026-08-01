@@ -1,6 +1,7 @@
 import { Flashcard, FlashcardDeck, FlashcardStatus, Difficulty } from '@/types/study';
+import { scopedKey } from '@/services/userScope';
 
-const CARDS_KEY = 'studyos_flashcards';
+const BASE_KEY = 'studyos_flashcards';
 
 const DEMO_CARDS: Flashcard[] = [
   {
@@ -54,10 +55,10 @@ const DEMO_CARDS: Flashcard[] = [
 ];
 
 function load(): Flashcard[] {
-  try { return JSON.parse(localStorage.getItem(CARDS_KEY) || 'null') ?? DEMO_CARDS; }
-  catch { return DEMO_CARDS; }
+  try { return JSON.parse(localStorage.getItem(scopedKey(BASE_KEY)) || 'null') ?? []; }
+  catch { return []; }
 }
-function save(cards: Flashcard[]) { localStorage.setItem(CARDS_KEY, JSON.stringify(cards)); }
+function save(cards: Flashcard[]) { localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(cards)); }
 
 export const flashcardService = {
   getAll(): Flashcard[] { return load(); },

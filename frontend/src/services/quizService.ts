@@ -1,7 +1,8 @@
 import { Quiz, QuizQuestion, QuizAttempt, Difficulty } from '@/types/study';
+import { scopedKey } from '@/services/userScope';
 
-const STORAGE_KEY = 'studyos_quizzes';
-const ATTEMPTS_KEY = 'studyos_quiz_attempts';
+const BASE_KEY = 'studyos_quizzes';
+const BASE_ATTEMPTS_KEY = 'studyos_quiz_attempts';
 
 const DEMO_QUIZZES: Quiz[] = [
   {
@@ -104,13 +105,13 @@ const DEMO_QUIZZES: Quiz[] = [
 
 function loadQuizzes(): Quiz[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : DEMO_QUIZZES;
-  } catch { return DEMO_QUIZZES; }
+    const raw = localStorage.getItem(scopedKey(BASE_KEY));
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
 
 function saveQuizzes(quizzes: Quiz[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(quizzes));
+  localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(quizzes));
 }
 
 export const quizService = {
@@ -132,12 +133,12 @@ export const quizService = {
     saveQuizzes(loadQuizzes().filter((q) => q.id !== id));
   },
   saveAttempt(attempt: QuizAttempt) {
-    const all: QuizAttempt[] = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '[]');
+    const all: QuizAttempt[] = JSON.parse(localStorage.getItem(scopedKey(BASE_ATTEMPTS_KEY)) || '[]');
     all.unshift(attempt);
-    localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(all.slice(0, 50)));
+    localStorage.setItem(scopedKey(BASE_ATTEMPTS_KEY), JSON.stringify(all.slice(0, 50)));
   },
   getAttempts(): QuizAttempt[] {
-    return JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '[]');
+    return JSON.parse(localStorage.getItem(scopedKey(BASE_ATTEMPTS_KEY)) || '[]');
   },
   async generateFromTopic(topic: string, difficulty: Difficulty, count: number): Promise<Quiz> {
     // Backend call in production; mock here

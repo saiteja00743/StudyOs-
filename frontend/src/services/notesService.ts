@@ -1,64 +1,21 @@
 import { Note } from '@/types/notes';
+import { scopedKey } from '@/services/userScope';
 
-const STORAGE_KEY = 'studyos_notes';
+const BASE_KEY = 'studyos_notes';
 
 function loadNotes(): Note[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : getDefaultNotes();
+    const raw = localStorage.getItem(scopedKey(BASE_KEY));
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return getDefaultNotes();
+    return [];
   }
 }
 
 function saveNotes(notes: Note[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+  localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(notes));
 }
 
-function getDefaultNotes(): Note[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: 'note-1',
-      title: 'Introduction to Neural Networks',
-      content:
-        '# Neural Networks\n\nA neural network is a series of algorithms that endeavors to recognize underlying relationships in a set of data through a process that mimics the way the human brain operates.\n\n## Key Concepts\n\n- **Neurons**: Basic units that take inputs, apply weights, and pass through an activation function.\n- **Layers**: Input, Hidden, and Output layers form the architecture.\n- **Backpropagation**: The algorithm for training networks by adjusting weights.\n\n## Activation Functions\n\n- ReLU: `f(x) = max(0, x)` — most common in hidden layers\n- Sigmoid: maps to (0,1) — good for binary output\n- Softmax: for multi-class classification\n\n> 💡 Practice: Build a simple XOR gate neural network from scratch.',
-      folder: 'AI & Machine Learning',
-      tags: ['AI', 'Deep Learning', 'Neural Networks'],
-      is_starred: true,
-      is_ai_enhanced: true,
-      word_count: 120,
-      created_at: now,
-      updated_at: now,
-    },
-    {
-      id: 'note-2',
-      title: 'Big-O Complexity Cheat Sheet',
-      content:
-        '# Big-O Complexity\n\n| Operation | Array | Linked List | Hash Map |\n|---|---|---|---|\n| Access | O(1) | O(n) | O(1) |\n| Search | O(n) | O(n) | O(1) |\n| Insert | O(n) | O(1) | O(1) |\n| Delete | O(n) | O(1) | O(1) |\n\n## Common Algorithms\n\n- **Binary Search**: O(log n)\n- **Merge Sort**: O(n log n)\n- **Quick Sort**: avg O(n log n), worst O(n²)',
-      folder: 'Computer Science',
-      tags: ['Algorithms', 'Data Structures', 'Coding'],
-      is_starred: false,
-      is_ai_enhanced: false,
-      word_count: 90,
-      created_at: now,
-      updated_at: now,
-    },
-    {
-      id: 'note-3',
-      title: 'Organic Chemistry Reactions',
-      content:
-        '# Key Organic Reactions\n\n## SN1 vs SN2\n\n**SN1 (Unimolecular)**\n- Rate depends on substrate only\n- Proceeds via carbocation intermediate\n- Racemization occurs\n\n**SN2 (Bimolecular)**\n- Rate depends on substrate and nucleophile\n- Backside attack → inversion\n- Favored by primary substrates\n\n## Elimination (E1/E2)\n\nE2 is concerted — requires anti-periplanar geometry.',
-      folder: 'Chemistry',
-      tags: ['Chemistry', 'Organic', 'Reactions'],
-      is_starred: true,
-      is_ai_enhanced: false,
-      word_count: 85,
-      created_at: now,
-      updated_at: now,
-    },
-  ];
-}
 
 export const notesService = {
   getAll(): Note[] {

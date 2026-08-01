@@ -1,6 +1,7 @@
 import { PlannerTask, TaskPriority, TaskStatus } from '@/types/study';
+import { scopedKey } from '@/services/userScope';
 
-const TASKS_KEY = 'studyos_tasks';
+const BASE_KEY = 'studyos_tasks';
 const POMODORO_KEY = 'studyos_pomodoro_sessions';
 
 function daysFromNow(n: number) {
@@ -52,10 +53,10 @@ const DEMO_TASKS: PlannerTask[] = [
 ];
 
 function load(): PlannerTask[] {
-  try { return JSON.parse(localStorage.getItem(TASKS_KEY) || 'null') ?? DEMO_TASKS; }
-  catch { return DEMO_TASKS; }
+  try { return JSON.parse(localStorage.getItem(scopedKey(BASE_KEY)) || 'null') ?? []; }
+  catch { return []; }
 }
-function save(tasks: PlannerTask[]) { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); }
+function save(tasks: PlannerTask[]) { localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(tasks)); }
 
 export const plannerService = {
   getAll(): PlannerTask[] { return load(); },

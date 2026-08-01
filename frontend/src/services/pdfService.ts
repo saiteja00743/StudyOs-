@@ -1,11 +1,12 @@
 import { PDFDocument, PDFProcessResult } from '@/types/notes';
+import { scopedKey } from '@/services/userScope';
 
-const STORAGE_KEY = 'studyos_pdfs';
+const BASE_KEY = 'studyos_pdfs';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 function loadPDFs(): PDFDocument[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(BASE_KEY));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -13,7 +14,7 @@ function loadPDFs(): PDFDocument[] {
 }
 
 function savePDFs(pdfs: PDFDocument[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pdfs));
+  localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(pdfs));
 }
 
 export const pdfService = {
