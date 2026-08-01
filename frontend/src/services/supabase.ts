@@ -27,3 +27,7 @@ export const supabase = createClient<Database>(
     },
   }
 );
+
+// Raw untyped access for profile operations that need full column coverage
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const rawFrom = (table: string) => (supabase as any).from(table);

@@ -1,69 +1,29 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { User, Session, AuthError } from '@supabase/supabase-js';
-import { supabase } from '@/services/supabase';
+import type { User, Session } from '@supabase/supabase-js';
+import { supabase, rawFrom } from '@/services/supabase';
 
 // ─── Types ──────────────────────────────────────────────────
-interface Profile {
+export interface Profile {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
   study_streak: number;
   created_at: string;
-}
-
-interface RegisteredUser {
-  id: string;
-  email: string;
-  passwordHash: string;
-  fullName: string;
-  createdAt: string;
+  updated_at?: string;
 }
 
 interface AuthContextValue {
-  // State
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  // Actions
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: { message: string } | null }>;
   signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: { message: string } | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: { message: string } | null }>;
-  updateProfileName: (fullName: string) => Promise<void>;
+  updateProfileName: (fullName: string) => Promise<{ error: { message: string } | null }>;
   refreshProfile: () => Promise<void>;
-}
-
-const REGISTERED_USERS_KEY = 'studyos_registered_accounts';
-const ACTIVE_SESSION_KEY = 'studyos_current_active_user';
-
-function getRegisteredAccounts(): RegisteredUser[] {
-  try {
-    return JSON.parse(localStorage.getItem(REGISTERED_USERS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function saveRegisteredAccounts(accounts: RegisteredUser[]) {
-  localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
-}
-
-function getActiveSession(): { user: User; profile: Profile } | null {
-  try {
-    return JSON.parse(localStorage.getItem(ACTIVE_SESSION_KEY) || 'null');
-  } catch {
-    return null;
-  }
-}
-
-function setActiveSession(user: User | null, profile: Profile | null) {
-  if (user && profile) {
-    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ user, profile }));
-  } else {
-    localStorage.removeItem(ACTIVE_SESSION_KEY);
-  }
 }
 
 // ─── Context ────────────────────────────────────────────────
@@ -76,287 +36,161 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch profile from Supabase
-  const fetchProfile = useCallback(async (userId: string, fallbackName?: string) => {
+  // ── Fetch user profile from Supabase cloud ────────────────
+  const fetchProfile = useCallback(async (authUser: User) => {
+    const fallbackName =
+      authUser.user_metadata?.full_name ||
+      authUser.email?.split('@')[0] ||
+      'Student';
+
     try {
-      const { data, error } = await supabase
-        .from('profiles')
+      const { data, error } = await rawFrom('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', authUser.id)
         .single();
 
-      const prof = data as Profile | null;
-      if (!error && prof && prof.full_name) {
-        setProfile(prof);
+      if (!error && data) {
+        const prof = data as Profile;
+        if (!prof.full_name) {
+          const patched = { ...prof, full_name: fallbackName };
+          await rawFrom('profiles').update({ full_name: fallbackName }).eq('id', authUser.id);
+          setProfile(patched);
+        } else {
+          setProfile(prof);
+        }
       } else {
-        const nameToUse = fallbackName || 'Student';
-        const newProf: Profile = {
-          id: userId,
-          full_name: nameToUse,
-          avatar_url: null,
-          study_streak: 1,
-          created_at: new Date().toISOString(),
-        };
-        await supabase.from('profiles').upsert(newProf as any);
-        setProfile(newProf);
-      }
-    } catch {
-      if (fallbackName) {
-        setProfile({
-          id: userId,
+        const newProfile: Profile = {
+          id: authUser.id,
           full_name: fallbackName,
-          avatar_url: null,
+          avatar_url: authUser.user_metadata?.avatar_url || null,
           study_streak: 1,
           created_at: new Date().toISOString(),
-        });
+          updated_at: new Date().toISOString(),
+        };
+        const { error: insertErr } = await rawFrom('profiles').upsert(newProfile);
+        if (!insertErr) setProfile(newProfile);
       }
+    } catch (e) {
+      console.error('fetchProfile error:', e);
+      setProfile({
+        id: authUser.id,
+        full_name: fallbackName,
+        avatar_url: null,
+        study_streak: 1,
+        created_at: new Date().toISOString(),
+      });
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (user?.id) await fetchProfile(user.id, user.user_metadata?.full_name || user.email?.split('@')[0]);
-  }, [user?.id, user?.user_metadata?.full_name, user?.email, fetchProfile]);
+    if (user) await fetchProfile(user);
+  }, [user, fetchProfile]);
 
-  // Bootstrap auth state on mount
+  // ── Bootstrap: subscribe to Supabase auth state changes ───
   useEffect(() => {
-    const isSupabaseConfigured =
-      import.meta.env.VITE_SUPABASE_URL &&
-      !import.meta.env.VITE_SUPABASE_URL.includes('placeholder');
+    // Get current session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    });
 
-    if (isSupabaseConfigured) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
+    // Listen for auth changes (login, logout, token refresh, cross-device)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          fetchProfile(session.user.id, session.user.user_metadata?.full_name || session.user.email?.split('@')[0]);
+          await fetchProfile(session.user);
+        } else {
+          setProfile(null);
         }
         setLoading(false);
-      });
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
-          setSession(session);
-          setUser(session?.user ?? null);
-          if (session?.user) {
-            await fetchProfile(session.user.id, session.user.user_metadata?.full_name || session.user.email?.split('@')[0]);
-          } else {
-            setProfile(null);
-          }
-          setLoading(false);
-        }
-      );
-
-      return () => subscription.unsubscribe();
-    } else {
-      // Local Auth Store (Real Credential Validation)
-      const savedSession = getActiveSession();
-      if (savedSession) {
-        setUser(savedSession.user);
-        setProfile(savedSession.profile);
-      } else {
-        setUser(null);
-        setProfile(null);
       }
-      setLoading(false);
-    }
+    );
+
+    return () => subscription.unsubscribe();
   }, [fetchProfile]);
 
-  // ─── Real Credential Auth Actions ─────────────────────────
-
-  const isSupabaseConfigured = () => {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    return url && !url.includes('placeholder') && !url.includes('your-supabase');
-  };
+  // ── Auth Actions ──────────────────────────────────────────
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (isSupabaseConfigured()) {
-      try {
-        const { error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: { full_name: fullName },
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-          },
-        });
-        if (error) return { error: { message: error.message } };
-        return { error: null };
-      } catch (e: any) {
-        return { error: { message: e?.message || 'Failed to sign up with Supabase.' } };
-      }
-    }
-
-    // Real Local Account Registration
-    const accounts = getRegisteredAccounts();
-    const existing = accounts.find((a) => a.email === cleanEmail);
-    if (existing) {
-      return { error: { message: 'An account with this email address already exists. Please log in.' } };
-    }
-
-    const userId = `usr-${Date.now()}`;
-    const newAccount: RegisteredUser = {
-      id: userId,
-      email: cleanEmail,
-      passwordHash: btoa(password), // Store encoded password for exact matching
-      fullName,
-      createdAt: new Date().toISOString(),
-    };
-
-    accounts.push(newAccount);
-    saveRegisteredAccounts(accounts);
-
-    const newUser: User = {
-      id: userId,
-      email: cleanEmail,
-      user_metadata: { full_name: fullName },
-      app_metadata: {},
-      aud: 'authenticated',
-      created_at: newAccount.createdAt,
-    } as unknown as User;
-
-    const newProfile: Profile = {
-      id: userId,
-      full_name: fullName,
-      avatar_url: null,
-      study_streak: 1,
-      created_at: newAccount.createdAt,
-    };
-
-    setUser(newUser);
-    setProfile(newProfile);
-    setActiveSession(newUser, newProfile);
-
+    const { error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: { full_name: fullName },
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    if (error) return { error: { message: error.message } };
     return { error: null };
   };
 
   const signIn = async (email: string, password: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (isSupabaseConfigured()) {
-      try {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-        if (error) return { error: { message: error.message } };
-        return { error: null };
-      } catch (e: any) {
-        return { error: { message: e?.message || 'Failed to sign in.' } };
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) {
+      let msg = error.message;
+      if (msg.toLowerCase().includes('invalid login')) {
+        msg = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (msg.toLowerCase().includes('email not confirmed')) {
+        msg = 'Please verify your email address before logging in. Check your inbox.';
       }
+      return { error: { message: msg } };
     }
-
-    // Real Credential Verification
-    const accounts = getRegisteredAccounts();
-    const account = accounts.find((a) => a.email === cleanEmail);
-
-    if (!account) {
-      return {
-        error: { message: 'No account found with this email address. Please check your email or sign up first.' },
-      };
-    }
-
-    const encodedPassword = btoa(password);
-    if (account.passwordHash !== encodedPassword) {
-      return {
-        error: { message: 'Invalid password. Please check your password and try again.' },
-      };
-    }
-
-    // Credentials match 100%!
-    const authenticatedUser: User = {
-      id: account.id,
-      email: account.email,
-      user_metadata: { full_name: account.fullName },
-      app_metadata: {},
-      aud: 'authenticated',
-      created_at: account.createdAt,
-    } as unknown as User;
-
-    const authenticatedProfile: Profile = {
-      id: account.id,
-      full_name: account.fullName,
-      avatar_url: null,
-      study_streak: 3,
-      created_at: account.createdAt,
-    };
-
-    setUser(authenticatedUser);
-    setProfile(authenticatedProfile);
-    setActiveSession(authenticatedUser, authenticatedProfile);
-
     return { error: null };
   };
 
   const signOut = async () => {
-    if (isSupabaseConfigured()) {
-      try { await supabase.auth.signOut(); } catch {}
-    }
+    await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
-    setActiveSession(null, null);
   };
 
   const resetPassword = async (email: string) => {
-    if (isSupabaseConfigured()) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      return { error: error ? { message: error.message } : null };
-    }
-    const accounts = getRegisteredAccounts();
-    const account = accounts.find((a) => a.email === email.trim().toLowerCase());
-    if (!account) {
-      return { error: { message: 'No account registered with this email address.' } };
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/reset-password` }
+    );
+    if (error) return { error: { message: error.message } };
     return { error: null };
   };
 
   const updatePassword = async (newPassword: string) => {
-    if (isSupabaseConfigured()) {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      return { error: error ? { message: error.message } : null };
-    }
-    if (user?.email) {
-      const accounts = getRegisteredAccounts();
-      const idx = accounts.findIndex((a) => a.email === user.email);
-      if (idx !== -1) {
-        accounts[idx].passwordHash = btoa(newPassword);
-        saveRegisteredAccounts(accounts);
-      }
-    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: { message: error.message } };
     return { error: null };
   };
 
   const updateProfileName = async (fullName: string) => {
-    if (!user) return;
-    const updated: Profile = {
-      id: user.id,
-      full_name: fullName,
-      avatar_url: profile?.avatar_url || null,
-      study_streak: profile?.study_streak || 1,
-      created_at: profile?.created_at || new Date().toISOString(),
-    };
+    if (!user) return { error: { message: 'No authenticated user.' } };
 
-    setProfile(updated);
-    setActiveSession(user, updated);
+    // Optimistic UI update
+    setProfile((prev) => prev ? { ...prev, full_name: fullName } : prev);
 
-    if (isSupabaseConfigured()) {
-      try {
-        await supabase.from('profiles').upsert(updated as any);
-      } catch (e) {
-        console.error('Failed to upsert profile to Supabase', e);
-      }
+    // Persist to Supabase cloud
+    const { error } = await rawFrom('profiles')
+      .update({ full_name: fullName, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    if (error) {
+      // Revert if failed
+      await fetchProfile(user);
+      return { error: { message: error.message } };
     }
 
-    const accounts = getRegisteredAccounts();
-    const idx = accounts.findIndex((a) => a.id === user.id || a.email === user.email);
-    if (idx !== -1) {
-      accounts[idx].fullName = fullName;
-      saveRegisteredAccounts(accounts);
-    }
+    // Also update Supabase auth user metadata
+    await supabase.auth.updateUser({ data: { full_name: fullName } });
+
+    return { error: null };
   };
 
   return (
@@ -381,11 +215,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 }
 
 export const useAuthContext = useAuth;

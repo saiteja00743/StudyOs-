@@ -87,10 +87,12 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    await updateProfileName(fullName);
+    const result = await updateProfileName(fullName);
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    if (!result?.error) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    }
   };
 
   const renderContent = () => {
