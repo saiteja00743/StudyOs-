@@ -5,6 +5,7 @@ import {
   Bell, Search, Brain, Menu, X, LayoutDashboard, MessageSquare,
   FileText, FileSearch, BookOpen, Layers, Calendar, BarChart3, Settings, LogOut,
 } from 'lucide-react';
+import { CommandPalette } from '@/components/ui/CommandPalette';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
@@ -28,6 +29,7 @@ const ALL_NAV_ITEMS = [
 export function AppNavbar() {
   const { profile, user, signOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const navigate = useNavigate();
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Student';
@@ -81,11 +83,15 @@ export function AppNavbar() {
 
         {/* Right: Search + Notifications */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Search */}
-          <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/8 rounded-xl px-3 py-2 hover:border-white/15 transition-all cursor-pointer group" id="app-search">
+          {/* Search button */}
+          <div
+            onClick={() => setCmdOpen(true)}
+            className="flex items-center gap-2 bg-white/5 border border-white/8 rounded-xl px-3 py-2 hover:border-white/15 transition-all cursor-pointer group"
+            id="app-search"
+          >
             <Search className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
-            <span className="text-sm text-slate-600 group-hover:text-slate-400 transition-colors">Search...</span>
-            <kbd className="text-2xs text-slate-600 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">⌘K</kbd>
+            <span className="text-xs sm:text-sm text-slate-600 group-hover:text-slate-400 transition-colors">Search...</span>
+            <kbd className="hidden sm:inline-block text-2xs text-slate-600 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">⌘K</kbd>
           </div>
 
           {/* Notifications */}
@@ -186,6 +192,9 @@ export function AppNavbar() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Global Cmd+K Command Palette */}
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
     </>
   );
 }

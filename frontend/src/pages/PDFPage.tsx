@@ -1,12 +1,17 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileSearch, Upload, X, FileText, Trash2, RefreshCw,
   ChevronDown, ChevronUp, Sparkles, AlertCircle, CheckCircle2,
-  Loader2, Brain, BookOpen, Zap, ClipboardList,
+  Loader2, Brain, BookOpen, Zap, ClipboardList, Volume2, VolumeX, MessageSquare,
 } from 'lucide-react';
 import { pdfService } from '@/services/pdfService';
+import { notesService } from '@/services/notesService';
+import { quizService } from '@/services/quizService';
+import { flashcardService } from '@/services/flashcardService';
 import { PDFDocument } from '@/types/notes';
+import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
 
 function formatSize(bytes: number): string {
@@ -34,10 +39,11 @@ function StatusBadge({ status }: { status: PDFDocument['status'] }) {
 
 export function PDFPage() {
   const [docs, setDocs] = useState<PDFDocument[]>(() => pdfService.getAll());
-  const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [speakingDocId, setSpeakingDocId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   const refresh = () => setDocs(pdfService.getAll());
 
@@ -67,16 +73,72 @@ export function PDFPage() {
     }
   }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
-  };
-
   const handleDelete = (id: string) => {
     pdfService.delete(id);
     if (expandedId === id) setExpandedId(null);
     refresh();
+  };
+
+  // ── Dynamic Cross-Module Triggers ─────────────────────────────
+  const handleSaveAsNotes = (doc: PDFDocument) => {
+    const keyPointsText = (doc.key_points || []).map((kp, i) => `${i + 1}. ${kp}`).join('\n');
+    notesService.create({
+      title: `${doc.name} Summary`,
+      content: `## 📄 Summary\n\n${doc.summary}\n\n### 💡 Key Points\n\n${keyPointsText}`,
+      folder: 'PDF Notes',
+      tags: ['pdf', 'ai-summary'],
+    });
+    navigate(ROUTES.NOTES);
+  };
+
+  const handleGenerateQuiz = async (doc: PDFDocument) => {
+    await quizService.generateFromTopic(doc.name, 'medium', 5);
+    navigate(ROUTES.QUIZ);
+  };
+
+  const handleCreateFlashcards = (doc: PDFDocument) => {
+    if (doc.key_points && doc.key_points.length > 0) {
+      doc.key_points.forEach((kp) => {
+        const parts = kp.split(':');
+        const front = parts[0]?.trim() || 'Key Concept';
+        const back = parts[1]?.trim() || kp;
+        flashcardService.create({ deck: doc.name, front, back });
+      });
+    } else {
+      flashcardService.create({
+        deck: doc.name,
+        front: `Summary of ${doc.name}`,
+        back: doc.summary,
+      });
+    }
+
+    navigate(ROUTES.FLASHCARDS);
+  };
+
+  const handleAskAiTutor = (doc: PDFDocument) => {
+    navigate(ROUTES.CHAT);
+  };
+
+  // ── Web Speech TTS Audio Narration ────────────────────────────
+  const handleSpeakSummary = (doc: PDFDocument) => {
+    if ('speechSynthesis' in window) {
+      if (speakingDocId === doc.id) {
+        window.speechSynthesis.cancel();
+        setSpeakingDocId(null);
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(doc.summary);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      utterance.onend = () => setSpeakingDocId(null);
+      utterance.onerror = () => setSpeakingDocId(null);
+
+      setSpeakingDocId(doc.id);
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   const hasUploads = Object.keys(uploadProgress).length > 0;
@@ -103,53 +165,32 @@ export function PDFPage() {
         <input
           ref={fileInputRef}
           type="file"
-          multiple
           accept=".pdf,.txt,.docx"
+          multiple
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
       </div>
 
-      {/* Drag & Drop Zone */}
-      <motion.div
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
+      {/* Drag & Drop Upload Dropzone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); }}
+        onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
         onClick={() => fileInputRef.current?.click()}
-        className={cn(
-          'relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all',
-          isDragging
-            ? 'border-brand-400 bg-brand-500/10 scale-[1.01]'
-            : 'border-white/10 hover:border-brand-500/40 hover:bg-white/3'
-        )}
+        className="glass rounded-2xl border-2 border-dashed border-white/10 hover:border-brand-500/50 p-8 text-center cursor-pointer transition-all hover:bg-white/3 group"
       >
-        <div className="flex flex-col items-center gap-3 pointer-events-none">
-          <div className={cn(
-            'w-14 h-14 rounded-2xl flex items-center justify-center transition-all',
-            isDragging ? 'bg-brand-gradient shadow-glow-md' : 'bg-white/5'
-          )}>
-            <Upload className={cn('w-7 h-7', isDragging ? 'text-white' : 'text-slate-500')} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-200">
-              {isDragging ? 'Drop files here!' : 'Drag & drop your documents'}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Supports PDF, DOCX, and TXT — up to 50MB</p>
-          </div>
-          {hasUploads && (
-            <div className="flex items-center gap-2 text-brand-400 text-xs">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Processing {Object.keys(uploadProgress).length} file(s)...
-            </div>
-          )}
+        <div className="w-12 h-12 rounded-2xl bg-brand-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+          <Upload className="w-6 h-6 text-brand-400" />
         </div>
-      </motion.div>
+        <p className="text-sm font-semibold text-white mb-1">Drag & drop your documents here</p>
+        <p className="text-xs text-slate-400">Supports PDF, DOCX, and TXT — up to 50MB</p>
+      </div>
 
-      {/* Feature Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Feature cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { icon: Brain, label: 'AI Summary', desc: 'Get concise summaries in seconds', color: 'text-purple-400', bg: 'bg-purple-500/10' },
-          { icon: ClipboardList, label: 'Key Points', desc: 'Extract the most important info', color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+          { icon: ClipboardList, label: 'Key Points', desc: 'Extract key points automatically', color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
           { icon: BookOpen, label: 'Smart Notes', desc: 'Auto-convert to study notes', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
           { icon: Zap, label: 'Quiz Ready', desc: 'Generate quizzes from any doc', color: 'text-amber-400', bg: 'bg-amber-500/10' },
         ].map(({ icon: Icon, label, desc, color, bg }) => (
@@ -173,6 +214,8 @@ export function PDFPage() {
 
           {docs.map((doc) => {
             const isExpanded = expandedId === doc.id;
+            const isSpeaking = speakingDocId === doc.id;
+
             return (
               <motion.div
                 key={doc.id}
@@ -226,9 +269,21 @@ export function PDFPage() {
                       <div className="p-5 grid md:grid-cols-2 gap-5">
                         {/* Summary */}
                         <div>
-                          <h4 className="text-xs font-semibold text-brand-400 flex items-center gap-1.5 mb-3">
-                            <Sparkles className="w-3.5 h-3.5" /> AI Summary
-                          </h4>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-semibold text-brand-400 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5" /> AI Summary
+                            </h4>
+                            <button
+                              onClick={() => handleSpeakSummary(doc)}
+                              className={cn(
+                                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-2xs font-medium transition-all',
+                                isSpeaking ? 'bg-amber-500 text-white animate-pulse' : 'bg-white/5 text-slate-400 hover:text-white'
+                              )}
+                            >
+                              {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                              {isSpeaking ? 'Stop Audio' : 'Listen Summary'}
+                            </button>
+                          </div>
                           <p className="text-sm text-slate-300 leading-relaxed">{doc.summary}</p>
                         </div>
 
@@ -252,16 +307,31 @@ export function PDFPage() {
                         )}
                       </div>
 
-                      {/* Action buttons */}
+                      {/* Fully Dynamic Cross-Module Action buttons */}
                       <div className="px-5 pb-4 flex gap-2 flex-wrap border-t border-white/5 pt-4">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/15 text-purple-300 text-xs font-medium hover:bg-purple-500 hover:text-white transition-all">
+                        <button
+                          onClick={() => handleSaveAsNotes(doc)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 text-purple-300 text-xs font-medium hover:bg-purple-500 hover:text-white transition-all shadow-sm"
+                        >
                           <BookOpen className="w-3.5 h-3.5" /> Save as Notes
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 text-xs font-medium hover:bg-amber-500 hover:text-white transition-all">
+                        <button
+                          onClick={() => handleGenerateQuiz(doc)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/15 text-amber-300 text-xs font-medium hover:bg-amber-500 hover:text-white transition-all shadow-sm"
+                        >
                           <Zap className="w-3.5 h-3.5" /> Generate Quiz
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 text-xs font-medium hover:bg-emerald-500 hover:text-white transition-all">
+                        <button
+                          onClick={() => handleCreateFlashcards(doc)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/15 text-emerald-300 text-xs font-medium hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+                        >
                           <Brain className="w-3.5 h-3.5" /> Create Flashcards
+                        </button>
+                        <button
+                          onClick={() => handleAskAiTutor(doc)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/15 text-cyan-300 text-xs font-medium hover:bg-cyan-500 hover:text-white transition-all shadow-sm"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> Ask AI Tutor
                         </button>
                       </div>
                     </motion.div>
