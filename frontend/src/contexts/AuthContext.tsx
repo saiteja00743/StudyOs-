@@ -77,21 +77,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // Fetch profile from Supabase
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+  const fetchProfile = useCallback(async (userId: string, fallbackName?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    if (!error && data) {
-      setProfile(data as Profile);
+      const prof = data as Profile | null;
+      if (!error && prof && prof.full_name) {
+        setProfile(prof);
+      } else {
+        const nameToUse = fallbackName || 'Student';
+        const newProf: Profile = {
+          id: userId,
+          full_name: nameToUse,
+          avatar_url: null,
+          study_streak: 1,
+          created_at: new Date().toISOString(),
+        };
+        await supabase.from('profiles').upsert(newProf as any);
+        setProfile(newProf);
+      }
+    } catch {
+      if (fallbackName) {
+        setProfile({
+          id: userId,
+          full_name: fallbackName,
+          avatar_url: null,
+          study_streak: 1,
+          created_at: new Date().toISOString(),
+        });
+      }
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (user?.id) await fetchProfile(user.id);
-  }, [user?.id, fetchProfile]);
+    if (user?.id) await fetchProfile(user.id, user.user_metadata?.full_name || user.email?.split('@')[0]);
+  }, [user?.id, user?.user_metadata?.full_name, user?.email, fetchProfile]);
 
   // Bootstrap auth state on mount
   useEffect(() => {
@@ -104,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          fetchProfile(session.user.id);
+          fetchProfile(session.user.id, session.user.user_metadata?.full_name || session.user.email?.split('@')[0]);
         }
         setLoading(false);
       });
@@ -114,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(session);
           setUser(session?.user ?? null);
           if (session?.user) {
-            await fetchProfile(session.user.id);
+            await fetchProfile(session.user.id, session.user.user_metadata?.full_name || session.user.email?.split('@')[0]);
           } else {
             setProfile(null);
           }
@@ -317,17 +341,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setProfile(updated);
+    setActiveSession(user, updated);
 
     if (isSupabaseConfigured()) {
-      await supabase.from('profiles').upsert(updated as any);
-    } else {
-      setActiveSession(user, updated);
-      const accounts = getRegisteredAccounts();
-      const idx = accounts.findIndex((a) => a.id === user.id || a.email === user.email);
-      if (idx !== -1) {
-        accounts[idx].fullName = fullName;
-        saveRegisteredAccounts(accounts);
+      try {
+        await supabase.from('profiles').upsert(updated as any);
+      } catch (e) {
+        console.error('Failed to upsert profile to Supabase', e);
       }
+    }
+
+    const accounts = getRegisteredAccounts();
+    const idx = accounts.findIndex((a) => a.id === user.id || a.email === user.email);
+    if (idx !== -1) {
+      accounts[idx].fullName = fullName;
+      saveRegisteredAccounts(accounts);
     }
   };
 

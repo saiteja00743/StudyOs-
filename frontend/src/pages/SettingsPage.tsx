@@ -63,6 +63,12 @@ export function SettingsPage() {
   const [bio, setBio] = useState('Computer Science student passionate about AI and algorithms.');
   const [school, setSchool] = useState('University Student');
 
+  React.useEffect(() => {
+    if (profile?.full_name) {
+      setFullName(profile.full_name);
+    }
+  }, [profile?.full_name]);
+
   // Appearance
   const [theme, setTheme] = useState<Theme>('dark');
   const [accent, setAccent] = useState<AccentColor>('violet');
