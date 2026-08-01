@@ -20,6 +20,8 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(pdf.router)
 
+@app.get("/")
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
     return {"status": "online", "service": "StudyOS AI Backend", "version": "1.0.0"}
