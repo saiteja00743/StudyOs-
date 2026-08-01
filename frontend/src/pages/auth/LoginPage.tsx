@@ -32,7 +32,7 @@ export function LoginPage() {
     setServerError('');
     const { error } = await signIn(data.email, data.password);
     if (error) {
-      setServerError('Invalid email or password. Please try again.');
+      setServerError(error.message || 'Invalid email or password. Please try again.');
     } else {
       navigate(ROUTES.DASHBOARD);
     }
