@@ -58,19 +58,24 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Profile fields — initialized from cloud profile
-  const [fullName, setFullName] = useState(profile?.full_name || user?.email?.split('@')[0] || '');
-  const [bio, setBio] = useState(profile?.bio || '');
-  const [school, setSchool] = useState(profile?.school || '');
+  // Profile fields — start empty; populated by useEffect once profile loads from Supabase
+  const [fullName, setFullName] = useState('');
+  const [bio, setBio] = useState('');
+  const [school, setSchool] = useState('');
 
-  // Sync all fields when profile loads from cloud
+  // Track whether we've synced from the server profile yet
+  const profileSyncedRef = React.useRef(false);
+
+  // Sync ALL fields the moment profile arrives (or changes) from Supabase cloud.
+  // Using ?? so an empty string in the DB is respected (not overridden by fallback).
   React.useEffect(() => {
-    if (profile) {
-      if (profile.full_name) setFullName(profile.full_name);
-      if (profile.bio !== undefined && profile.bio !== null) setBio(profile.bio);
-      if (profile.school !== undefined && profile.school !== null) setSchool(profile.school);
-    }
-  }, [profile?.full_name, profile?.bio, profile?.school]);
+    if (!profile) return;
+    setFullName(profile.full_name ?? user?.email?.split('@')[0] ?? '');
+    setBio(profile.bio ?? '');
+    setSchool(profile.school ?? '');
+    profileSyncedRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]); // depend on the whole object so any field change triggers a sync
 
   // Appearance
   const [theme, setTheme] = useState<Theme>('dark');
@@ -90,7 +95,7 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    const result = await updateProfile({ full_name: fullName, bio, school });
+    const result = await updateProfile({ full_name: fullName.trim() || undefined, bio, school });
     setSaving(false);
     if (!result?.error) {
       setSaved(true);
