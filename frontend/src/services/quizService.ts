@@ -1,170 +1,121 @@
-import { Quiz, QuizQuestion, QuizAttempt, Difficulty } from '@/types/study';
-import { scopedKey } from '@/services/userScope';
-
-const BASE_KEY = 'studyos_quizzes';
-const BASE_ATTEMPTS_KEY = 'studyos_quiz_attempts';
-
-const DEMO_QUIZZES: Quiz[] = [
-  {
-    id: 'quiz-1',
-    title: 'Python Data Structures',
-    topic: 'Computer Science',
-    difficulty: 'medium',
-    time_limit_minutes: 10,
-    tags: ['Python', 'Coding'],
-    created_at: new Date().toISOString(),
-    questions: [
-      {
-        id: 'q1', type: 'mcq', difficulty: 'easy',
-        question: 'Which Python data structure uses key-value pairs?',
-        options: [
-          { id: 'a', text: 'List' }, { id: 'b', text: 'Tuple' },
-          { id: 'c', text: 'Dictionary' }, { id: 'd', text: 'Set' },
-        ],
-        correct_answer: 'c',
-        explanation: 'Dictionaries (dict) store data in key-value pairs and are defined with curly braces {}.',
-      },
-      {
-        id: 'q2', type: 'mcq', difficulty: 'medium',
-        question: 'What is the time complexity of accessing an element in a Python list by index?',
-        options: [
-          { id: 'a', text: 'O(n)' }, { id: 'b', text: 'O(log n)' },
-          { id: 'c', text: 'O(1)' }, { id: 'd', text: 'O(n²)' },
-        ],
-        correct_answer: 'c',
-        explanation: 'Python lists are backed by arrays, so index access is O(1) — constant time.',
-      },
-      {
-        id: 'q3', type: 'true_false', difficulty: 'easy',
-        question: 'Python tuples are mutable (can be changed after creation).',
-        options: [{ id: 'true', text: 'True' }, { id: 'false', text: 'False' }],
-        correct_answer: 'false',
-        explanation: 'Tuples are immutable — they cannot be modified after creation, unlike lists.',
-      },
-      {
-        id: 'q4', type: 'mcq', difficulty: 'hard',
-        question: 'Which operation has O(1) average time complexity for a Python set?',
-        options: [
-          { id: 'a', text: 'Sorted iteration' }, { id: 'b', text: 'Membership test (x in set)' },
-          { id: 'c', text: 'Union with large set' }, { id: 'd', text: 'None of the above' },
-        ],
-        correct_answer: 'b',
-        explanation: 'Sets use hash tables internally, making membership tests O(1) on average.',
-      },
-      {
-        id: 'q5', type: 'mcq', difficulty: 'medium',
-        question: 'What does list.pop() do by default (with no argument)?',
-        options: [
-          { id: 'a', text: 'Removes the first element' }, { id: 'b', text: 'Removes a random element' },
-          { id: 'c', text: 'Removes the last element' }, { id: 'd', text: 'Clears the entire list' },
-        ],
-        correct_answer: 'c',
-        explanation: 'list.pop() with no argument removes and returns the last element (index -1).',
-      },
-    ],
-  },
-  {
-    id: 'quiz-2',
-    title: 'Calculus Fundamentals',
-    topic: 'Mathematics',
-    difficulty: 'hard',
-    time_limit_minutes: 15,
-    tags: ['Math', 'Calculus'],
-    created_at: new Date().toISOString(),
-    questions: [
-      {
-        id: 'c1', type: 'mcq', difficulty: 'medium',
-        question: 'What is the derivative of f(x) = x³?',
-        options: [
-          { id: 'a', text: 'x²' }, { id: 'b', text: '3x²' },
-          { id: 'c', text: '3x' }, { id: 'd', text: '6x' },
-        ],
-        correct_answer: 'b',
-        explanation: 'Using the power rule: d/dx(xⁿ) = n·xⁿ⁻¹, so d/dx(x³) = 3x².',
-      },
-      {
-        id: 'c2', type: 'true_false', difficulty: 'easy',
-        question: 'The integral of a constant function f(x) = c is cx + C.',
-        options: [{ id: 'true', text: 'True' }, { id: 'false', text: 'False' }],
-        correct_answer: 'true',
-        explanation: '∫c dx = cx + C, where C is the constant of integration.',
-      },
-      {
-        id: 'c3', type: 'mcq', difficulty: 'hard',
-        question: 'What is lim(x→0) of sin(x)/x?',
-        options: [
-          { id: 'a', text: '0' }, { id: 'b', text: 'undefined' },
-          { id: 'c', text: '1' }, { id: 'd', text: '∞' },
-        ],
-        correct_answer: 'c',
-        explanation: 'This is a fundamental limit: lim(x→0) sin(x)/x = 1. Proven by squeeze theorem.',
-      },
-    ],
-  },
-];
-
-function loadQuizzes(): Quiz[] {
-  try {
-    const raw = localStorage.getItem(scopedKey(BASE_KEY));
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveQuizzes(quizzes: Quiz[]) {
-  localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(quizzes));
-}
+/**
+ * quizService.ts — Supabase Cloud Storage
+ * Quizzes and attempts stored in `quizzes` + `quiz_attempts` tables.
+ */
+import { Quiz, QuizAttempt, Difficulty } from '@/types/study';
+import { rawFrom } from '@/services/supabase';
 
 export const quizService = {
-  getAll(): Quiz[] {
-    return loadQuizzes();
+  async getAll(userId: string): Promise<Quiz[]> {
+    const { data, error } = await rawFrom('quizzes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('quizService.getAll:', error.message); return []; }
+    return (data as Quiz[]) ?? [];
   },
-  getById(id: string): Quiz | undefined {
-    return loadQuizzes().find((q) => q.id === id);
+
+  async getById(userId: string, id: string): Promise<Quiz | null> {
+    const { data, error } = await rawFrom('quizzes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data as Quiz;
   },
-  save(quiz: Quiz): Quiz {
-    const quizzes = loadQuizzes();
-    const idx = quizzes.findIndex((q) => q.id === quiz.id);
-    if (idx >= 0) quizzes[idx] = quiz;
-    else quizzes.unshift(quiz);
-    saveQuizzes(quizzes);
-    return quiz;
+
+  async save(userId: string, quiz: Quiz): Promise<Quiz | null> {
+    const existing = await this.getById(userId, quiz.id);
+    if (existing) {
+      // Update
+      const { data, error } = await rawFrom('quizzes')
+        .update({ title: quiz.title, topic: quiz.topic, difficulty: quiz.difficulty,
+          time_limit_minutes: quiz.time_limit_minutes, tags: quiz.tags, questions: quiz.questions })
+        .eq('id', quiz.id)
+        .select()
+        .single();
+      if (error) { console.error('quizService.save(update):', error.message); return null; }
+      return data as Quiz;
+    } else {
+      // Insert
+      const payload = {
+        user_id: userId,
+        title: quiz.title,
+        topic: quiz.topic || '',
+        difficulty: quiz.difficulty || 'medium',
+        time_limit_minutes: quiz.time_limit_minutes || 10,
+        tags: quiz.tags || [],
+        questions: quiz.questions || [],
+        created_at: new Date().toISOString(),
+      };
+      const { data, error } = await rawFrom('quizzes').insert(payload).select().single();
+      if (error) { console.error('quizService.save(insert):', error.message); return null; }
+      return data as Quiz;
+    }
   },
-  delete(id: string) {
-    saveQuizzes(loadQuizzes().filter((q) => q.id !== id));
+
+  async delete(id: string): Promise<boolean> {
+    const { error } = await rawFrom('quizzes').delete().eq('id', id);
+    if (error) { console.error('quizService.delete:', error.message); return false; }
+    return true;
   },
-  saveAttempt(attempt: QuizAttempt) {
-    const all: QuizAttempt[] = JSON.parse(localStorage.getItem(scopedKey(BASE_ATTEMPTS_KEY)) || '[]');
-    all.unshift(attempt);
-    localStorage.setItem(scopedKey(BASE_ATTEMPTS_KEY), JSON.stringify(all.slice(0, 50)));
+
+  async saveAttempt(userId: string, attempt: QuizAttempt): Promise<boolean> {
+    const payload = {
+      quiz_id: attempt.quiz_id,
+      user_id: userId,
+      score: attempt.score,
+      total_questions: attempt.total,
+      time_spent_seconds: attempt.time_taken_seconds,
+      answers: attempt.answers || {},
+      completed_at: attempt.completed_at || new Date().toISOString(),
+    };
+    const { error } = await rawFrom('quiz_attempts').insert(payload);
+    if (error) { console.error('quizService.saveAttempt:', error.message); return false; }
+    return true;
   },
-  getAttempts(): QuizAttempt[] {
-    return JSON.parse(localStorage.getItem(scopedKey(BASE_ATTEMPTS_KEY)) || '[]');
+
+  async getAttempts(userId: string): Promise<QuizAttempt[]> {
+    const { data, error } = await rawFrom('quiz_attempts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('completed_at', { ascending: false })
+      .limit(50);
+    if (error) { console.error('quizService.getAttempts:', error.message); return []; }
+    return (data ?? []).map((a: Record<string, unknown>) => ({
+      quiz_id: a.quiz_id as string,
+      answers: (a.answers as Record<string, string>) || {},
+      score: a.score as number,
+      total: a.total_questions as number,
+      time_taken_seconds: a.time_spent_seconds as number,
+      completed_at: a.completed_at as string,
+    }));
   },
-  async generateFromTopic(topic: string, difficulty: Difficulty, count: number): Promise<Quiz> {
-    // Backend call in production; mock here
-    await new Promise((r) => setTimeout(r, 1200));
+
+  async generateFromTopic(userId: string, topic: string, difficulty: Difficulty, count: number): Promise<Quiz> {
+    // Generates a placeholder quiz — real AI generation handled in PDFPage/ChatPage
+    const questions = Array.from({ length: count }, (_, i) => ({
+      id: `q-${Date.now()}-${i}`,
+      type: 'mcq' as const,
+      question: `Question ${i + 1} about ${topic}`,
+      options: [
+        { id: 'a', text: 'Option A' }, { id: 'b', text: 'Option B' },
+        { id: 'c', text: 'Option C' }, { id: 'd', text: 'Option D' },
+      ],
+      correct_answer: 'a',
+      difficulty,
+    }));
     const quiz: Quiz = {
       id: `quiz-${Date.now()}`,
       title: `${topic} Quiz`,
       topic,
       difficulty,
-      time_limit_minutes: count * 2,
-      tags: [topic],
+      questions,
+      time_limit_minutes: Math.max(5, count),
       created_at: new Date().toISOString(),
-      questions: Array.from({ length: count }, (_, i) => ({
-        id: `gen-${i}`,
-        type: i % 3 === 0 ? 'true_false' : 'mcq',
-        difficulty,
-        question: `Question ${i + 1} about ${topic}: Which of the following is correct?`,
-        options: [
-          { id: 'a', text: 'First option' }, { id: 'b', text: 'Second option' },
-          { id: 'c', text: 'Third option' }, { id: 'd', text: 'Fourth option' },
-        ],
-        correct_answer: 'b',
-        explanation: `This is a generated question about ${topic}. Connect to Gemini API for real explanations.`,
-      })),
+      tags: [topic],
     };
-    this.save(quiz);
-    return quiz;
+    return (await this.save(userId, quiz)) ?? quiz;
   },
 };

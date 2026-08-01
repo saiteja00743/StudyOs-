@@ -3,13 +3,16 @@ import { motion } from 'framer-motion';
 import {
   BarChart3, TrendingUp, Brain, BookOpen, Layers, Target,
   Calendar, Flame, Clock, Zap, Award, Activity, ChevronUp,
-  ChevronDown, FileText,
+  ChevronDown, FileText, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { quizService } from '@/services/quizService';
 import { flashcardService } from '@/services/flashcardService';
 import { notesService } from '@/services/notesService';
 import { plannerService } from '@/services/plannerService';
+import { useAuth } from '@/hooks/useAuth';
+import { Note } from '@/types/notes';
+import { Flashcard, PlannerTask, QuizAttempt } from '@/types/study';
 
 // ─── Mini Bar Chart ───────────────────────────────────────────
 function BarChart({ data, color = '#6d4bff', label }: { data: number[]; color?: string; label?: string }) {
@@ -130,10 +133,26 @@ function StatCard({ icon: Icon, label, value, sub, color, bg, trend }: {
 
 // ─── Main Analytics Page ──────────────────────────────────────
 export function AnalyticsPage() {
-  const [notes] = useState(() => notesService.getAll());
-  const [cards] = useState(() => flashcardService.getAll());
-  const [tasks] = useState(() => plannerService.getAll());
-  const [attempts] = useState(() => quizService.getAttempts());
+  const { user } = useAuth();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [cards, setCards] = useState<Flashcard[]>([]);
+  const [tasks, setTasks] = useState<PlannerTask[]>([]);
+  const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    Promise.all([
+      notesService.getAll(user.id),
+      flashcardService.getAll(user.id),
+      plannerService.getAll(user.id),
+      quizService.getAttempts(user.id),
+    ]).then(([n, c, t, a]) => {
+      setNotes(n);
+      setCards(c);
+      setTasks(t);
+      setAttempts(a);
+    });
+  }, [user?.id]);
 
   const masteredCards = cards.filter((c) => c.status === 'mastered').length;
   const avgQuizScore = attempts.length
@@ -280,5 +299,3 @@ export function AnalyticsPage() {
   );
 }
 
-// Need CheckCircle2 import
-import { CheckCircle2 } from 'lucide-react';

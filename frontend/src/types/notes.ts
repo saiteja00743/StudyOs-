@@ -22,7 +22,7 @@ export interface NoteFolder_ {
   note_count: number;
 }
 
-export type PDFStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
+export type PDFStatus = 'idle' | 'uploading' | 'processing' | 'done' | 'error' | 'ready';
 
 export interface PDFDocument {
   id: string;
@@ -32,6 +32,7 @@ export interface PDFDocument {
   summary?: string;
   key_points?: string[];
   status: PDFStatus;
+  file_url?: string;
   uploaded_at: string;
   user_id?: string;
 }

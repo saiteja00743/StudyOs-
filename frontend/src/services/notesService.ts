@@ -1,95 +1,83 @@
+/**
+ * notesService.ts — Supabase Cloud Storage
+ * All notes are stored in the `notes` table, scoped to the logged-in user via RLS.
+ */
 import { Note } from '@/types/notes';
-import { scopedKey } from '@/services/userScope';
-
-const BASE_KEY = 'studyos_notes';
-
-function loadNotes(): Note[] {
-  try {
-    const raw = localStorage.getItem(scopedKey(BASE_KEY));
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveNotes(notes: Note[]) {
-  localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(notes));
-}
-
+import { rawFrom } from '@/services/supabase';
 
 export const notesService = {
-  getAll(): Note[] {
-    return loadNotes().sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-    );
+  async getAll(userId: string): Promise<Note[]> {
+    const { data, error } = await rawFrom('notes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (error) { console.error('notesService.getAll:', error.message); return []; }
+    return (data as Note[]) ?? [];
   },
 
-  getById(id: string): Note | undefined {
-    return loadNotes().find((n) => n.id === id);
+  async getById(userId: string, id: string): Promise<Note | null> {
+    const { data, error } = await rawFrom('notes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data as Note;
   },
 
-  create(data: Partial<Note>): Note {
-    const notes = loadNotes();
+  async create(userId: string, data: Partial<Note>): Promise<Note | null> {
     const now = new Date().toISOString();
-    const newNote: Note = {
-      id: `note-${Date.now()}`,
+    const content = data.content || '';
+    const payload = {
+      user_id: userId,
       title: data.title || 'Untitled Note',
-      content: data.content || '',
+      content,
       folder: data.folder || 'General',
       tags: data.tags || [],
       is_starred: false,
       is_ai_enhanced: false,
-      word_count: (data.content || '').split(/\s+/).filter(Boolean).length,
+      word_count: content.split(/\s+/).filter(Boolean).length,
       created_at: now,
       updated_at: now,
-      ...data,
     };
-    notes.unshift(newNote);
-    saveNotes(notes);
-    return newNote;
+    const { data: created, error } = await rawFrom('notes').insert(payload).select().single();
+    if (error) { console.error('notesService.create:', error.message); return null; }
+    return created as Note;
   },
 
-  update(id: string, data: Partial<Note>): Note | null {
-    const notes = loadNotes();
-    const idx = notes.findIndex((n) => n.id === id);
-    if (idx === -1) return null;
-    const updated: Note = {
-      ...notes[idx],
+  async update(id: string, data: Partial<Note>): Promise<Note | null> {
+    const payload: Record<string, unknown> = {
       ...data,
       updated_at: new Date().toISOString(),
-      word_count: data.content
-        ? data.content.split(/\s+/).filter(Boolean).length
-        : notes[idx].word_count,
     };
-    notes[idx] = updated;
-    saveNotes(notes);
-    return updated;
+    if (data.content !== undefined) {
+      payload.word_count = data.content.split(/\s+/).filter(Boolean).length;
+    }
+    const { data: updated, error } = await rawFrom('notes')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) { console.error('notesService.update:', error.message); return null; }
+    return updated as Note;
   },
 
-  delete(id: string): boolean {
-    const notes = loadNotes();
-    const filtered = notes.filter((n) => n.id !== id);
-    if (filtered.length === notes.length) return false;
-    saveNotes(filtered);
+  async delete(id: string): Promise<boolean> {
+    const { error } = await rawFrom('notes').delete().eq('id', id);
+    if (error) { console.error('notesService.delete:', error.message); return false; }
     return true;
   },
 
-  toggleStar(id: string): Note | null {
-    const note = loadNotes().find((n) => n.id === id);
-    if (!note) return null;
-    return this.update(id, { is_starred: !note.is_starred });
+  async toggleStar(id: string, currentValue: boolean): Promise<Note | null> {
+    return this.update(id, { is_starred: !currentValue });
   },
 
-  getFolders(): string[] {
-    const notes = loadNotes();
-    const folders = Array.from(new Set(notes.map((n) => n.folder))).filter(Boolean);
+  async getFolders(userId: string): Promise<string[]> {
+    const { data, error } = await rawFrom('notes')
+      .select('folder')
+      .eq('user_id', userId);
+    if (error) return [];
+    const folders = Array.from(new Set((data as { folder: string }[]).map((n) => n.folder))).filter(Boolean);
     return folders.sort();
-  },
-
-  async aiEnhance(noteId: string): Promise<Note | null> {
-    const note = this.getById(noteId);
-    if (!note) return null;
-    // Would call backend in production. For now, flag as AI-enhanced.
-    return this.update(noteId, { is_ai_enhanced: true });
   },
 };

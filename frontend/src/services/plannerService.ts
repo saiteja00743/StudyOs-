@@ -1,107 +1,87 @@
-import { PlannerTask, TaskPriority, TaskStatus } from '@/types/study';
-import { scopedKey } from '@/services/userScope';
-
-const BASE_KEY = 'studyos_tasks';
-const POMODORO_KEY = 'studyos_pomodoro_sessions';
-
-function daysFromNow(n: number) {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return d.toISOString().split('T')[0];
-}
-
-const DEMO_TASKS: PlannerTask[] = [
-  {
-    id: 'task-1', title: 'Complete Neural Networks assignment',
-    description: 'Build a 2-layer feedforward network with backpropagation',
-    subject: 'AI & Machine Learning', priority: 'high', status: 'in_progress',
-    due_date: daysFromNow(1), estimated_minutes: 120, tags: ['AI', 'Assignment'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'task-2', title: 'Review Calculus Chapter 5 — Integration',
-    description: '', subject: 'Mathematics', priority: 'medium', status: 'todo',
-    due_date: daysFromNow(2), estimated_minutes: 60, tags: ['Calculus', 'Review'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'task-3', title: 'Flashcard review — Chemistry reactions',
-    description: 'SN1, SN2, E1, E2 mechanisms', subject: 'Chemistry',
-    priority: 'medium', status: 'todo',
-    due_date: daysFromNow(0), estimated_minutes: 30, tags: ['Flashcards'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'task-4', title: 'Read CS research paper on Transformers',
-    description: '"Attention Is All You Need" — Vaswani et al.',
-    subject: 'Computer Science', priority: 'low', status: 'todo',
-    due_date: daysFromNow(4), estimated_minutes: 90, tags: ['Research', 'AI'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'task-5', title: 'Physics problem set — Kinematics',
-    description: 'Chapters 3–4 exercises', subject: 'Physics',
-    priority: 'urgent', status: 'todo',
-    due_date: daysFromNow(-1), estimated_minutes: 75, tags: ['Problem Set'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'task-6', title: 'Write essay outline — Industrial Revolution',
-    description: '', subject: 'History', priority: 'low', status: 'done',
-    due_date: daysFromNow(-2), estimated_minutes: 45, actual_minutes: 50, tags: ['Essay'],
-    created_at: new Date().toISOString(),
-  },
-];
-
-function load(): PlannerTask[] {
-  try { return JSON.parse(localStorage.getItem(scopedKey(BASE_KEY)) || 'null') ?? []; }
-  catch { return []; }
-}
-function save(tasks: PlannerTask[]) { localStorage.setItem(scopedKey(BASE_KEY), JSON.stringify(tasks)); }
+/**
+ * plannerService.ts — Supabase Cloud Storage
+ * All tasks stored in the `planner_tasks` table, scoped to user via RLS.
+ */
+import { PlannerTask, TaskStatus } from '@/types/study';
+import { rawFrom } from '@/services/supabase';
 
 export const plannerService = {
-  getAll(): PlannerTask[] { return load(); },
-
-  getByDate(dateStr: string): PlannerTask[] {
-    return load().filter((t) => t.due_date === dateStr);
+  async getAll(userId: string): Promise<PlannerTask[]> {
+    const { data, error } = await rawFrom('planner_tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('due_date', { ascending: true });
+    if (error) { console.error('plannerService.getAll:', error.message); return []; }
+    return (data as PlannerTask[]) ?? [];
   },
 
-  create(data: Partial<PlannerTask>): PlannerTask {
-    const tasks = load();
-    const task: PlannerTask = {
-      id: `task-${Date.now()}`, title: 'New Task', subject: 'General',
-      priority: 'medium', status: 'todo', due_date: new Date().toISOString().split('T')[0],
-      estimated_minutes: 30, tags: [], created_at: new Date().toISOString(), ...data,
+  async getByDate(userId: string, dateStr: string): Promise<PlannerTask[]> {
+    const { data, error } = await rawFrom('planner_tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('due_date', dateStr);
+    if (error) return [];
+    return (data as PlannerTask[]) ?? [];
+  },
+
+  async create(userId: string, data: Partial<PlannerTask>): Promise<PlannerTask | null> {
+    const payload = {
+      user_id: userId,
+      title: data.title || 'New Task',
+      description: data.description || '',
+      subject: data.subject || 'General',
+      priority: data.priority || 'medium',
+      status: 'todo',
+      due_date: data.due_date || new Date().toISOString().split('T')[0],
+      estimated_minutes: data.estimated_minutes || 30,
+      actual_minutes: 0,
+      tags: data.tags || [],
+      created_at: new Date().toISOString(),
     };
-    tasks.unshift(task);
-    save(tasks);
-    return task;
+    const { data: created, error } = await rawFrom('planner_tasks').insert(payload).select().single();
+    if (error) { console.error('plannerService.create:', error.message); return null; }
+    return created as PlannerTask;
   },
 
-  update(id: string, data: Partial<PlannerTask>): PlannerTask | null {
-    const tasks = load();
-    const idx = tasks.findIndex((t) => t.id === id);
-    if (idx === -1) return null;
-    tasks[idx] = { ...tasks[idx], ...data };
-    save(tasks);
-    return tasks[idx];
+  async update(id: string, data: Partial<PlannerTask>): Promise<PlannerTask | null> {
+    const payload: Record<string, unknown> = { ...data };
+    if (data.status === 'done' && !data.completed_at) {
+      payload.completed_at = new Date().toISOString();
+    }
+    if (data.status && data.status !== 'done') {
+      payload.completed_at = null;
+    }
+    const { data: updated, error } = await rawFrom('planner_tasks')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) { console.error('plannerService.update:', error.message); return null; }
+    return updated as PlannerTask;
   },
 
-  delete(id: string) { save(load().filter((t) => t.id !== id)); },
+  async delete(id: string): Promise<boolean> {
+    const { error } = await rawFrom('planner_tasks').delete().eq('id', id);
+    if (error) { console.error('plannerService.delete:', error.message); return false; }
+    return true;
+  },
 
-  toggleStatus(id: string): PlannerTask | null {
-    const task = load().find((t) => t.id === id);
-    if (!task) return null;
-    const next: TaskStatus = task.status === 'done' ? 'todo' : task.status === 'todo' ? 'in_progress' : 'done';
+  async toggleStatus(id: string, currentStatus: TaskStatus): Promise<PlannerTask | null> {
+    const next: TaskStatus =
+      currentStatus === 'done' ? 'todo' :
+      currentStatus === 'todo' ? 'in_progress' :
+      'done';
     return this.update(id, { status: next });
   },
 
-  getStats() {
-    const tasks = load();
+  async getStats(userId: string): Promise<{ total: number; done: number; overdue: number; today: number }> {
+    const tasks = await this.getAll(userId);
+    const today = new Date().toISOString().split('T')[0];
     return {
       total: tasks.length,
       done: tasks.filter((t) => t.status === 'done').length,
-      overdue: tasks.filter((t) => t.status !== 'done' && t.due_date < new Date().toISOString().split('T')[0]).length,
-      today: tasks.filter((t) => t.due_date === new Date().toISOString().split('T')[0]).length,
+      overdue: tasks.filter((t) => t.status !== 'done' && t.due_date < today).length,
+      today: tasks.filter((t) => t.due_date === today).length,
     };
   },
 };

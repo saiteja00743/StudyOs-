@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, CheckCircle2, Circle, Clock, Plus, Trash2,
   AlertTriangle, Flame, Pause, Play, RotateCcw, Bell,
-  Target, TrendingUp, ChevronDown, Filter,
+  Target, TrendingUp, ChevronDown, Filter, Loader2,
 } from 'lucide-react';
 import { PlannerTask, TaskPriority, TaskStatus } from '@/types/study';
 import { plannerService } from '@/services/plannerService';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const PRIORITY_STYLES: Record<TaskPriority, { label: string; cls: string; dot: string }> = {
@@ -182,7 +183,9 @@ function TaskItem({ task, onToggle, onDelete }: {
 
 // ─── Main Planner Page ────────────────────────────────────────
 export function PlannerPage() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
+  const [stats, setStats] = useState({ total: 0, done: 0, overdue: 0, today: 0 });
   const [filter, setFilter] = useState<'all' | 'today' | 'overdue' | TaskStatus>('all');
   const [showForm, setShowForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -190,11 +193,19 @@ export function PlannerPage() {
   const [newPriority, setNewPriority] = useState<TaskPriority>('medium');
   const [newDue, setNewDue] = useState(new Date().toISOString().split('T')[0]);
   const [newMinutes, setNewMinutes] = useState(30);
+  const [loading, setLoading] = useState(true);
 
-  const refresh = () => setTasks(plannerService.getAll());
-  useEffect(() => { refresh(); }, []);
+  const refresh = async () => {
+    if (!user?.id) return;
+    const all = await plannerService.getAll(user.id);
+    setTasks(all);
+    const s = await plannerService.getStats(user.id);
+    setStats(s);
+    setLoading(false);
+  };
 
-  const stats = plannerService.getStats();
+  useEffect(() => { refresh(); }, [user?.id]);
+
   const today = new Date().toISOString().split('T')[0];
 
   const filtered = tasks.filter((t) => {
@@ -204,10 +215,21 @@ export function PlannerPage() {
     return t.status === filter;
   });
 
-  const handleCreate = () => {
-    if (!newTitle.trim()) return;
-    plannerService.create({ title: newTitle, subject: newSubject || 'General', priority: newPriority, due_date: newDue, estimated_minutes: newMinutes });
-    setNewTitle(''); setNewSubject(''); setShowForm(false); refresh();
+  const handleCreate = async () => {
+    if (!newTitle.trim() || !user?.id) return;
+    await plannerService.create(user.id, { title: newTitle, subject: newSubject || 'General', priority: newPriority, due_date: newDue, estimated_minutes: newMinutes });
+    setNewTitle(''); setNewSubject(''); setShowForm(false);
+    await refresh();
+  };
+
+  const handleToggle = async (task: PlannerTask) => {
+    await plannerService.toggleStatus(task.id, task.status);
+    await refresh();
+  };
+
+  const handleDelete = async (id: string) => {
+    await plannerService.delete(id);
+    await refresh();
   };
 
   return (
@@ -267,7 +289,11 @@ export function PlannerPage() {
 
         {/* Task list */}
         <div className="space-y-2">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-slate-500">
               <Target className="w-10 h-10 mx-auto mb-2 opacity-30" />
               <p>No tasks in this view. Add a new task to get started!</p>
@@ -277,8 +303,8 @@ export function PlannerPage() {
               <TaskItem
                 key={task.id}
                 task={task}
-                onToggle={() => { plannerService.toggleStatus(task.id); refresh(); }}
-                onDelete={() => { plannerService.delete(task.id); refresh(); }}
+                onToggle={() => handleToggle(task)}
+                onDelete={() => handleDelete(task.id)}
               />
             ))
           )}

@@ -12,6 +12,7 @@ interface NoteEditorProps {
   note: Note | null;
   onSave: (note: Note) => void;
   onClose?: () => void;
+  userId?: string;
 }
 
 const TOOLBAR_ACTIONS = [
@@ -23,7 +24,7 @@ const TOOLBAR_ACTIONS = [
   { icon: Code2, label: 'Code', insert: '```\ncode\n```\n' },
 ];
 
-export function NoteEditor({ note, onSave, onClose }: NoteEditorProps) {
+export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [folder, setFolder] = useState('General');
@@ -59,27 +60,32 @@ export function NoteEditor({ note, onSave, onClose }: NoteEditorProps) {
     setWordCount(content.split(/\s+/).filter(Boolean).length);
   }, [content]);
 
-  // Auto-save debounce
-  useEffect(() => {
-    if (!note || saveState === 'idle') return;
-    const timer = setTimeout(handleSave, 1000);
-    return () => clearTimeout(timer);
-  }, [title, content, folder, tags]);
-
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!title.trim()) return;
     setSaveState('saving');
 
-    const updated = note
-      ? notesService.update(note.id, { title, content, folder, tags, is_starred: isStarred })
-      : notesService.create({ title, content, folder, tags, is_starred: isStarred });
+    let updated: Note | null = null;
+    if (note) {
+      updated = await notesService.update(note.id, { title, content, folder, tags, is_starred: isStarred });
+    } else if (userId) {
+      updated = await notesService.create(userId, { title, content, folder, tags, is_starred: isStarred });
+    }
 
     if (updated) {
       onSave(updated);
-      setTimeout(() => setSaveState('saved'), 300);
+      setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2000);
+    } else {
+      setSaveState('idle');
     }
-  }, [note, title, content, folder, tags, isStarred]);
+  }, [note, title, content, folder, tags, isStarred, userId]);
+
+  // Auto-save debounce (only for existing notes — new notes save on first manual save)
+  useEffect(() => {
+    if (!note?.id || saveState === 'idle' || saveState === 'saved') return;
+    const timer = setTimeout(handleSave, 1200);
+    return () => clearTimeout(timer);
+  }, [title, content, folder, tags, isStarred]);
 
   const handleAIEnhance = async () => {
     if (!note) return;
@@ -87,7 +93,7 @@ export function NoteEditor({ note, onSave, onClose }: NoteEditorProps) {
     await new Promise((r) => setTimeout(r, 1500));
     const enhancedContent = content + '\n\n---\n\n> 🧠 **AI Enhancement**: Key concepts have been identified and summarized. Consider creating flashcards from the **highlighted definitions** and **formulas** in this note.';
     setContent(enhancedContent);
-    notesService.update(note.id, { content: enhancedContent, is_ai_enhanced: true });
+    await notesService.update(note.id, { content: enhancedContent, is_ai_enhanced: true });
     setIsEnhancing(false);
   };
 

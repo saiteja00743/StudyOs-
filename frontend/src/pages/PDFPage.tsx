@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,6 +10,7 @@ import { pdfService } from '@/services/pdfService';
 import { notesService } from '@/services/notesService';
 import { quizService } from '@/services/quizService';
 import { flashcardService } from '@/services/flashcardService';
+import { useAuth } from '@/hooks/useAuth';
 import { PDFDocument } from '@/types/notes';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
@@ -26,6 +27,7 @@ function StatusBadge({ status }: { status: PDFDocument['status'] }) {
     uploading: { label: 'Uploading', cls: 'text-cyan-400 bg-cyan-500/10', icon: Loader2 },
     processing: { label: 'Processing', cls: 'text-purple-400 bg-purple-500/10', icon: Loader2 },
     done: { label: 'Ready', cls: 'text-success bg-success/10', icon: CheckCircle2 },
+    ready: { label: 'Ready', cls: 'text-success bg-success/10', icon: CheckCircle2 },
     error: { label: 'Error', cls: 'text-danger bg-danger/10', icon: AlertCircle },
   };
   const { label, cls, icon: Icon } = map[status];
@@ -38,17 +40,26 @@ function StatusBadge({ status }: { status: PDFDocument['status'] }) {
 }
 
 export function PDFPage() {
-  const [docs, setDocs] = useState<PDFDocument[]>(() => pdfService.getAll());
+  const { user } = useAuth();
+  const [docs, setDocs] = useState<PDFDocument[]>([]);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [speakingDocId, setSpeakingDocId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
-  const refresh = () => setDocs(pdfService.getAll());
+  const refresh = useCallback(async () => {
+    if (!user?.id) return;
+    const all = await pdfService.getAll(user.id);
+    setDocs(all);
+    setLoading(false);
+  }, [user?.id]);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const handleFiles = useCallback(async (files: FileList | null) => {
-    if (!files) return;
+    if (!files || !user?.id) return;
     const allowed = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
     for (const file of Array.from(files)) {
@@ -60,29 +71,40 @@ export function PDFPage() {
       setUploadProgress((p) => ({ ...p, [tempId]: 0 }));
 
       try {
-        const result = await pdfService.upload(file, (pct) => {
+        // Simulate processing then save metadata to Supabase
+        for (let pct = 0; pct <= 100; pct += 20) {
           setUploadProgress((p) => ({ ...p, [tempId]: pct }));
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        const doc = await pdfService.create(user.id, {
+          name: file.name,
+          size: file.size,
+          page_count: 0,
+          status: 'ready',
+          summary: `AI summary of "${file.name}" will appear here after processing.`,
+          key_points: [],
         });
-        setExpandedId(result.id);
+        if (doc) setExpandedId(doc.id);
       } catch (e) {
         console.error(e);
       } finally {
         setUploadProgress((p) => { const copy = { ...p }; delete copy[tempId]; return copy; });
       }
-      refresh();
+      await refresh();
     }
-  }, []);
+  }, [user?.id, refresh]);
 
-  const handleDelete = (id: string) => {
-    pdfService.delete(id);
+  const handleDelete = async (id: string) => {
+    await pdfService.delete(id);
     if (expandedId === id) setExpandedId(null);
-    refresh();
+    await refresh();
   };
 
   // ── Dynamic Cross-Module Triggers ─────────────────────────────
-  const handleSaveAsNotes = (doc: PDFDocument) => {
+  const handleSaveAsNotes = async (doc: PDFDocument) => {
+    if (!user?.id) return;
     const keyPointsText = (doc.key_points || []).map((kp, i) => `${i + 1}. ${kp}`).join('\n');
-    notesService.create({
+    await notesService.create(user.id, {
       title: `${doc.name} Summary`,
       content: `## 📄 Summary\n\n${doc.summary}\n\n### 💡 Key Points\n\n${keyPointsText}`,
       folder: 'PDF Notes',
@@ -92,20 +114,22 @@ export function PDFPage() {
   };
 
   const handleGenerateQuiz = async (doc: PDFDocument) => {
-    await quizService.generateFromTopic(doc.name, 'medium', 5);
+    if (!user?.id) return;
+    await quizService.generateFromTopic(user.id, doc.name, 'medium', 5);
     navigate(ROUTES.QUIZ);
   };
 
-  const handleCreateFlashcards = (doc: PDFDocument) => {
+  const handleCreateFlashcards = async (doc: PDFDocument) => {
+    if (!user?.id) return;
     if (doc.key_points && doc.key_points.length > 0) {
-      doc.key_points.forEach((kp) => {
+      for (const kp of doc.key_points) {
         const parts = kp.split(':');
         const front = parts[0]?.trim() || 'Key Concept';
         const back = parts[1]?.trim() || kp;
-        flashcardService.create({ deck: doc.name, front, back });
-      });
+        await flashcardService.create(user.id, { deck: doc.name, front, back });
+      }
     } else {
-      flashcardService.create({
+      await flashcardService.create(user.id, {
         deck: doc.name,
         front: `Summary of ${doc.name}`,
         back: doc.summary,

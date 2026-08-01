@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Layers, Plus, RotateCcw, CheckCircle2, XCircle, Brain,
   ThumbsUp, Smile, Frown, AlertCircle, Eye, EyeOff,
-  ChevronLeft, ChevronRight, Trash2, Sparkles, TrendingUp,
+  ChevronLeft, ChevronRight, Trash2, Sparkles, TrendingUp, Loader2,
 } from 'lucide-react';
 import { Flashcard, FlashcardDeck } from '@/types/study';
 import { flashcardService } from '@/services/flashcardService';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const STATUS_COLORS = {
@@ -22,7 +23,7 @@ const DECK_COLORS: string[] = [
 ];
 
 // ─── Flashcard Review Mode ─────────────────────────────────────
-function ReviewMode({ cards, onDone }: { cards: Flashcard[]; onDone: () => void }) {
+function ReviewMode({ cards, onDone, onRate }: { cards: Flashcard[]; onDone: () => void; onRate: (card: Flashcard, rating: 1 | 2 | 3 | 4) => Promise<void> }) {
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [reviewed, setReviewed] = useState<{ card: Flashcard; rating: number }[]>([]);
@@ -30,8 +31,8 @@ function ReviewMode({ cards, onDone }: { cards: Flashcard[]; onDone: () => void 
   const card = cards[index];
   const progress = (index / cards.length) * 100;
 
-  const handleRate = (rating: 1 | 2 | 3 | 4) => {
-    flashcardService.review(card.id, rating);
+  const handleRate = async (rating: 1 | 2 | 3 | 4) => {
+    await onRate(card, rating);
     setReviewed((prev) => [...prev, { card, rating }]);
     setFlipped(false);
     if (index < cards.length - 1) setIndex((i) => i + 1);
@@ -109,31 +110,50 @@ function ReviewMode({ cards, onDone }: { cards: Flashcard[]; onDone: () => void 
 
 // ─── Main Flashcards Page ─────────────────────────────────────
 export function FlashcardsPage() {
+  const { user } = useAuth();
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [decks, setDecks] = useState<FlashcardDeck[]>([]);
+  const [dueCards, setDueCards] = useState<Flashcard[]>([]);
   const [mode, setMode] = useState<'browse' | 'review' | 'done'>('browse');
   const [activeDeck, setActiveDeck] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [newFront, setNewFront] = useState('');
   const [newBack, setNewBack] = useState('');
   const [newDeck, setNewDeck] = useState('General');
+  const [loading, setLoading] = useState(true);
 
-  const refresh = () => {
-    setCards(flashcardService.getAll());
-    setDecks(flashcardService.getDecks());
+  const refresh = async () => {
+    if (!user?.id) return;
+    const [all, deckList, due] = await Promise.all([
+      flashcardService.getAll(user.id),
+      flashcardService.getDecks(user.id),
+      flashcardService.getDueCards(user.id),
+    ]);
+    setCards(all);
+    setDecks(deckList);
+    setDueCards(due);
+    setLoading(false);
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [user?.id]);
 
-  const dueCards = flashcardService.getDueCards();
   const filteredCards = activeDeck ? cards.filter((c) => c.deck === activeDeck) : cards;
   const reviewCards = activeDeck ? filteredCards.filter((c) => c.status !== 'mastered') : dueCards;
 
-  const handleCreate = () => {
-    if (!newFront.trim() || !newBack.trim()) return;
-    flashcardService.create({ front: newFront, back: newBack, deck: newDeck });
+  const handleCreate = async () => {
+    if (!newFront.trim() || !newBack.trim() || !user?.id) return;
+    await flashcardService.create(user.id, { front: newFront, back: newBack, deck: newDeck });
     setNewFront(''); setNewBack(''); setShowForm(false);
-    refresh();
+    await refresh();
+  };
+
+  const handleRate = async (card: Flashcard, rating: 1 | 2 | 3 | 4) => {
+    await flashcardService.review(card.id, rating, card);
+  };
+
+  const handleDelete = async (id: string) => {
+    await flashcardService.delete(id);
+    await refresh();
   };
 
   if (mode === 'review') {
@@ -143,7 +163,7 @@ export function FlashcardsPage() {
           className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors">
           <ChevronLeft className="w-4 h-4" /> Back to Decks
         </button>
-        <ReviewMode cards={reviewCards.slice(0, 20)} onDone={() => { setMode('done'); refresh(); }} />
+        <ReviewMode cards={reviewCards.slice(0, 20)} onDone={() => { setMode('done'); refresh(); }} onRate={handleRate} />
       </div>
     );
   }
@@ -253,6 +273,11 @@ export function FlashcardsPage() {
         <h2 className="text-sm font-semibold text-slate-300 mb-3">
           {activeDeck ? activeDeck : 'All Cards'} ({filteredCards.length})
         </h2>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
+          </div>
+        ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {filteredCards.map((card) => (
             <div key={card.id} className="glass p-4 rounded-xl border border-white/5 group hover:border-brand-500/20 transition-all">
@@ -260,7 +285,7 @@ export function FlashcardsPage() {
                 <span className={cn('px-2 py-0.5 rounded-full text-2xs font-medium', STATUS_COLORS[card.status])}>
                   {card.status}
                 </span>
-                <button onClick={() => { flashcardService.delete(card.id); refresh(); }}
+                <button onClick={() => handleDelete(card.id)}
                   className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-danger transition-all p-1 rounded-lg hover:bg-white/5">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -271,6 +296,7 @@ export function FlashcardsPage() {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Create Form Modal */}

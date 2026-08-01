@@ -10,6 +10,9 @@ import { ROUTES } from '@/constants';
 import { notesService } from '@/services/notesService';
 import { quizService } from '@/services/quizService';
 import { flashcardService } from '@/services/flashcardService';
+import { useAuth } from '@/hooks/useAuth';
+import { Note } from '@/types/notes';
+import { Quiz, FlashcardDeck } from '@/types/study';
 import { cn } from '@/utils/cn';
 
 interface CommandPaletteProps {
@@ -18,8 +21,26 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [decks, setDecks] = useState<FlashcardDeck[]>([]);
   const navigate = useNavigate();
+
+  // Load data from Supabase when palette opens
+  useEffect(() => {
+    if (!open || !user?.id) return;
+    Promise.all([
+      notesService.getAll(user.id),
+      quizService.getAll(user.id),
+      flashcardService.getDecks(user.id),
+    ]).then(([n, q, d]) => {
+      setNotes(n);
+      setQuizzes(q);
+      setDecks(d);
+    });
+  }, [open, user?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -37,10 +58,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   }, [open, onClose]);
 
   if (!open) return null;
-
-  const notes = notesService.getAll();
-  const quizzes = quizService.getAll();
-  const decks = flashcardService.getDecks();
 
   const handleNavigate = (path: string) => {
     onClose();

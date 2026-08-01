@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Quiz, QuizQuestion, Difficulty } from '@/types/study';
 import { quizService } from '@/services/quizService';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const DIFF_COLORS: Record<Difficulty, string> = {
@@ -194,17 +195,25 @@ function QuizResults({ score, total, timeSec, onRetry, onBack }: {
 
 // ─── Main Quiz Page ───────────────────────────────────────────
 export function QuizPage() {
+  const { user } = useAuth();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [mode, setMode] = useState<'list' | 'running' | 'results'>('list');
   const [results, setResults] = useState<{ score: number; total: number; timeSec: number } | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [genTopic, setGenTopic] = useState('');
   const [genDifficulty, setGenDifficulty] = useState<Difficulty>('medium');
   const [genCount, setGenCount] = useState(5);
 
-  const refresh = () => setQuizzes(quizService.getAll());
-  useEffect(() => { refresh(); }, []);
+  const refresh = async () => {
+    if (!user?.id) return;
+    const all = await quizService.getAll(user.id);
+    setQuizzes(all);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, [user?.id]);
 
   const handleStartQuiz = (quiz: Quiz) => {
     setActiveQuiz(quiz);
@@ -212,19 +221,34 @@ export function QuizPage() {
     setMode('running');
   };
 
-  const handleFinish = (score: number, total: number, timeSec: number) => {
-    quizService.saveAttempt({ quiz_id: activeQuiz!.id, answers: {}, score, total, time_taken_seconds: timeSec, completed_at: new Date().toISOString() });
+  const handleFinish = async (score: number, total: number, timeSec: number) => {
+    if (user?.id && activeQuiz) {
+      await quizService.saveAttempt(user.id, {
+        quiz_id: activeQuiz.id,
+        answers: {},
+        score,
+        total,
+        time_taken_seconds: timeSec,
+        completed_at: new Date().toISOString(),
+      });
+    }
     setResults({ score, total, timeSec });
     setMode('results');
   };
 
   const handleGenerate = async () => {
-    if (!genTopic.trim()) return;
+    if (!genTopic.trim() || !user?.id) return;
     setGenerating(true);
-    const quiz = await quizService.generateFromTopic(genTopic.trim(), genDifficulty, genCount);
-    refresh();
+    const quiz = await quizService.generateFromTopic(user.id, genTopic.trim(), genDifficulty, genCount);
+    await refresh();
     setGenerating(false);
     handleStartQuiz(quiz);
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await quizService.delete(id);
+    await refresh();
   };
 
   if (mode === 'running' && activeQuiz) {
@@ -316,7 +340,7 @@ export function QuizPage() {
                 <span className="flex items-center gap-1"><Target className="w-3 h-3" />{quiz.questions.length} questions</span>
                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{quiz.time_limit_minutes} min</span>
                 <button
-                  onClick={(e) => { e.stopPropagation(); quizService.delete(quiz.id); refresh(); }}
+                  onClick={(e) => handleDelete(quiz.id, e)}
                   className="hover:text-danger transition-colors p-1 rounded-lg hover:bg-white/5"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

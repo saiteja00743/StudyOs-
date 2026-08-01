@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, Plus, Search, Star, Sparkles, Folder, MoreVertical,
-  Trash2, Edit3, ArrowRight, Clock, Hash, ArrowLeft, Menu, ListFilter,
+  Trash2, Edit3, ArrowRight, Clock, Hash, ArrowLeft, Menu, ListFilter, Loader2,
 } from 'lucide-react';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { notesService } from '@/services/notesService';
 import { Note } from '@/types/notes';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const FOLDER_COLORS: Record<string, string> = {
@@ -25,6 +26,7 @@ function getFolderColor(folder: string): string {
 }
 
 export function NotesPage() {
+  const { user } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,47 +34,54 @@ export function NotesPage() {
   const [folders, setFolders] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<'folders' | 'list' | 'editor'>('list');
+  const [loading, setLoading] = useState(true);
 
-  const refreshNotes = useCallback(() => {
-    const all = notesService.getAll();
+  const refreshNotes = useCallback(async () => {
+    if (!user?.id) return;
+    const all = await notesService.getAll(user.id);
     setNotes(all);
-    setFolders(notesService.getFolders());
-  }, []);
+    const folderList = await notesService.getFolders(user.id);
+    setFolders(folderList);
+    setLoading(false);
+  }, [user?.id]);
 
   useEffect(() => {
     refreshNotes();
   }, [refreshNotes]);
 
-  const handleNewNote = () => {
-    const created = notesService.create({
+  const handleNewNote = async () => {
+    if (!user?.id) return;
+    const created = await notesService.create(user.id, {
       title: 'Untitled Note',
       content: '',
       folder: activeFolder !== 'all' && activeFolder !== 'starred' ? activeFolder : 'General',
     });
-    refreshNotes();
-    setActiveNote(created);
-    setMobilePane('editor');
+    if (created) {
+      await refreshNotes();
+      setActiveNote(created);
+      setMobilePane('editor');
+    }
   };
 
-  const handleSave = (saved: Note) => {
-    refreshNotes();
+  const handleSave = async (saved: Note) => {
+    await refreshNotes();
     setActiveNote(saved);
   };
 
-  const handleDelete = (id: string) => {
-    notesService.delete(id);
+  const handleDelete = async (id: string) => {
+    await notesService.delete(id);
     if (activeNote?.id === id) {
       setActiveNote(null);
       setMobilePane('list');
     }
-    refreshNotes();
+    await refreshNotes();
     setShowDeleteConfirm(null);
   };
 
-  const handleToggleStar = (id: string) => {
-    notesService.toggleStar(id);
-    refreshNotes();
-    if (activeNote?.id === id) setActiveNote(notesService.getById(id) || null);
+  const handleToggleStar = async (id: string, currentStarred: boolean) => {
+    const updated = await notesService.toggleStar(id, currentStarred);
+    await refreshNotes();
+    if (activeNote?.id === id && updated) setActiveNote(updated);
   };
 
   const selectNoteMobile = (note: Note) => {
@@ -89,11 +98,9 @@ export function NotesPage() {
       n.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchFolder =
-      activeFolder === 'all'
-        ? true
-        : activeFolder === 'starred'
-        ? n.is_starred
-        : n.folder === activeFolder;
+      activeFolder === 'all' ? true
+      : activeFolder === 'starred' ? n.is_starred
+      : n.folder === activeFolder;
 
     return matchSearch && matchFolder;
   });
@@ -219,7 +226,11 @@ export function NotesPage() {
 
         {/* Note cards list */}
         <div className="flex-1 overflow-y-auto no-scrollbar p-2 space-y-1">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-5 h-5 text-brand-400 animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-slate-500 text-xs">
               <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
               {searchQuery ? 'No notes match search' : 'No notes yet. Create one!'}
@@ -279,7 +290,7 @@ export function NotesPage() {
                   ) : (
                     <div className="absolute top-2 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleStar(note.id); }}
+                        onClick={(e) => { e.stopPropagation(); handleToggleStar(note.id, note.is_starred); }}
                         className="p-1 hover:bg-white/10 rounded-lg text-slate-500 hover:text-amber-400 transition-all"
                       >
                         <Star className="w-3 h-3" />
@@ -320,6 +331,7 @@ export function NotesPage() {
         <NoteEditor
           note={activeNote}
           onSave={handleSave}
+          userId={user?.id}
         />
       </div>
     </div>

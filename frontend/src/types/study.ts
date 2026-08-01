@@ -79,6 +79,7 @@ export interface PlannerTask {
   estimated_minutes: number;
   actual_minutes?: number;
   tags: string[];
+  completed_at?: string | null;
   created_at: string;
 }
 

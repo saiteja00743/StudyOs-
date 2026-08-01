@@ -9,7 +9,7 @@ import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ApiKeyModal } from '@/components/chat/ApiKeyModal';
 import { chatService } from '@/services/chatService';
 import { hasApiKey } from '@/services/geminiClient';
-import { scopedKey } from '@/services/userScope';
+import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage as ChatMessageType, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
 import { cn } from '@/utils/cn';
 
@@ -22,10 +22,8 @@ const SUBJECT_OPTIONS: { id: SubjectFocus; label: string; icon: React.ElementTyp
 ];
 
 export function ChatPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem(scopedKey('studyos_chat_sessions'));
-    return saved ? JSON.parse(saved) : [];
-  });
+  const { user } = useAuth();
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [inputPrompt, setInputPrompt] = useState('');
@@ -39,51 +37,45 @@ export function ChatPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load initial suggestions
+  // Load sessions from Supabase on mount
   useEffect(() => {
     setSuggestedQuestions(chatService.getSuggestedQuestions());
-  }, []);
-
-  // Save sessions to localStorage (user-scoped)
-  useEffect(() => {
-    localStorage.setItem(scopedKey('studyos_chat_sessions'), JSON.stringify(sessions));
-  }, [sessions]);
+    if (user?.id) {
+      chatService.getSessions(user.id).then(setSessions);
+    }
+  }, [user?.id]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
 
-  // Handle switching or initializing session
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-
+  // Load messages when switching sessions
   useEffect(() => {
-    if (activeSession) {
-      setMessages(activeSession.messages);
-      setSelectedSubject(activeSession.subject_focus || 'general');
+    if (activeSessionId) {
+      chatService.getMessages(activeSessionId).then((msgs) => {
+        setMessages(msgs);
+        const session = sessions.find((s) => s.id === activeSessionId);
+        if (session) setSelectedSubject((session.subject_focus as SubjectFocus) || 'general');
+      });
     } else {
       setMessages([]);
     }
   }, [activeSessionId]);
 
-  const createNewChat = () => {
-    const newSessionId = `session-${Date.now()}`;
-    const newSession: ChatSession = {
-      id: newSessionId,
-      title: 'New Study Chat',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      messages: [],
-      subject_focus: selectedSubject,
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newSessionId);
-    setMessages([]);
+  const createNewChat = async () => {
+    if (!user?.id) return;
+    const session = await chatService.createSession(user.id, selectedSubject);
+    if (session) {
+      setSessions((prev) => [session, ...prev]);
+      setActiveSessionId(session.id);
+      setMessages([]);
+    }
   };
 
   const handleSendMessage = async (textToSend?: string) => {
     const content = textToSend || inputPrompt.trim();
-    if (!content || isGenerating) return;
+    if (!content || isGenerating || !user?.id) return;
 
     setInputPrompt('');
     setIsGenerating(true);
@@ -96,45 +88,35 @@ export function ChatPage() {
       subject_focus: selectedSubject,
     };
 
+    // Create session if none active
     let currentSessionId = activeSessionId;
-    let updatedSessions = [...sessions];
-
     if (!currentSessionId) {
-      currentSessionId = `session-${Date.now()}`;
-      const newSession: ChatSession = {
-        id: currentSessionId,
-        title: content.slice(0, 30) + (content.length > 30 ? '...' : ''),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        messages: [userMessage],
-        subject_focus: selectedSubject,
-      };
-      updatedSessions = [newSession, ...updatedSessions];
+      const session = await chatService.createSession(user.id, selectedSubject);
+      if (!session) { setIsGenerating(false); return; }
+      currentSessionId = session.id;
+      setSessions((prev) => [session, ...prev]);
       setActiveSessionId(currentSessionId);
+      // Update title after first message
+      await chatService.updateSessionTitle(currentSessionId, content.slice(0, 40) + (content.length > 40 ? '...' : ''));
     }
+
+    // Save user message to Supabase
+    await chatService.saveMessage(user.id, currentSessionId, 'user', content);
 
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
 
-    // Placeholder streaming message
+    // Streaming placeholder
     const streamingMsgId = `ast-${Date.now()}`;
-    const streamingPlaceholder: ChatMessageType = {
-      id: streamingMsgId,
-      role: 'assistant',
-      content: '...',
+    setMessages([...nextMessages, {
+      id: streamingMsgId, role: 'assistant', content: '...',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      subject_focus: selectedSubject,
-      isStreaming: true,
-    };
-
-    setMessages([...nextMessages, streamingPlaceholder]);
+      subject_focus: selectedSubject, isStreaming: true,
+    }]);
 
     try {
       const resultMessage = await chatService.sendMessage(
-        content,
-        selectedSubject,
-        nextMessages,
-        currentSessionId,
+        content, selectedSubject, nextMessages, currentSessionId,
         (streamedChunk) => {
           setMessages((prev) =>
             prev.map((msg) =>
@@ -147,20 +129,11 @@ export function ChatPage() {
       const finalMessages = [...nextMessages, { ...resultMessage, isStreaming: false }];
       setMessages(finalMessages);
 
-      // Update session state
-      setSessions((prevSessions) =>
-        prevSessions.map((session) => {
-          if (session.id === currentSessionId) {
-            return {
-              ...session,
-              title: session.messages.length === 0 ? content.slice(0, 30) : session.title,
-              messages: finalMessages,
-              updated_at: new Date().toISOString(),
-            };
-          }
-          return session;
-        })
-      );
+      // Save assistant message to Supabase
+      await chatService.saveMessage(user.id, currentSessionId, 'assistant', resultMessage.content);
+
+      // Refresh sessions list to show updated_at
+      chatService.getSessions(user.id).then(setSessions);
     } catch (err) {
       console.error(err);
     } finally {
@@ -168,7 +141,8 @@ export function ChatPage() {
     }
   };
 
-  const handleDeleteSession = (id: string) => {
+  const handleDeleteSession = async (id: string) => {
+    await chatService.deleteSession(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) {
       setActiveSessionId(null);

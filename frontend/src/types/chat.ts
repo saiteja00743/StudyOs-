@@ -14,7 +14,7 @@ export interface ChatSession {
   title: string;
   created_at: string;
   updated_at: string;
-  messages: ChatMessage[];
+  messages?: ChatMessage[]; // Optional — loaded separately from Supabase
   subject_focus: SubjectFocus;
 }
 
