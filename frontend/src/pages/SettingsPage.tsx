@@ -52,16 +52,16 @@ function Toggle({ value, onChange, label, description }: {
 }
 
 export function SettingsPage() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, updateProfileName } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Profile fields
-  const [fullName, setFullName] = useState(profile?.full_name || 'Alex Student');
+  const [fullName, setFullName] = useState(profile?.full_name || user?.email?.split('@')[0] || 'Student');
   const [bio, setBio] = useState('Computer Science student passionate about AI and algorithms.');
-  const [school, setSchool] = useState('MIT — Class of 2026');
+  const [school, setSchool] = useState('University Student');
 
   // Appearance
   const [theme, setTheme] = useState<Theme>('dark');
@@ -81,7 +81,7 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
+    await updateProfileName(fullName);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);

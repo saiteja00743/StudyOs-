@@ -31,6 +31,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: { message: string } | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: { message: string } | null }>;
+  updateProfileName: (fullName: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -305,6 +306,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   };
 
+  const updateProfileName = async (fullName: string) => {
+    if (!user) return;
+    const updated: Profile = {
+      id: user.id,
+      full_name: fullName,
+      avatar_url: profile?.avatar_url || null,
+      study_streak: profile?.study_streak || 1,
+      created_at: profile?.created_at || new Date().toISOString(),
+    };
+
+    setProfile(updated);
+
+    if (isSupabaseConfigured()) {
+      await supabase.from('profiles').upsert(updated as any);
+    } else {
+      setActiveSession(user, updated);
+      const accounts = getRegisteredAccounts();
+      const idx = accounts.findIndex((a) => a.id === user.id || a.email === user.email);
+      if (idx !== -1) {
+        accounts[idx].fullName = fullName;
+        saveRegisteredAccounts(accounts);
+      }
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -317,6 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         resetPassword,
         updatePassword,
+        updateProfileName,
         refreshProfile,
       }}
     >
