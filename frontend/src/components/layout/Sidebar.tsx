@@ -52,7 +52,7 @@ export function Sidebar() {
     <motion.aside
       animate={{ width: collapsed ? 72 : 240 }}
       transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="relative flex flex-col h-full bg-surface-900 border-r border-white/5 flex-shrink-0 overflow-hidden"
+      className="relative hidden md:flex flex-col h-full bg-surface-900 border-r border-white/5 flex-shrink-0 overflow-hidden"
       id="app-sidebar"
     >
       {/* Header */}

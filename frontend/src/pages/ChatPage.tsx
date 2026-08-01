@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Sparkles, Brain, Atom, Calculator, Code, Target, BookOpen,
-  Plus, Trash2, ArrowDown, RefreshCw, MessageSquare, Key, Zap,
+  Plus, Trash2, ArrowDown, RefreshCw, MessageSquare, Key, Zap, History,
 } from 'lucide-react';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -33,6 +33,7 @@ export function ChatPage() {
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [aiConnected, setAiConnected] = useState(hasApiKey());
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -184,13 +185,22 @@ export function ChatPage() {
         onSelectSession={setActiveSessionId}
         onNewChat={createNewChat}
         onDeleteSession={handleDeleteSession}
+        mobileOpen={mobileHistoryOpen}
+        onCloseMobile={() => setMobileHistoryOpen(false)}
       />
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full min-w-0 bg-surface-950/60">
         {/* Top Chat Bar — Subject pills & Actions */}
-        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-surface-900/40 flex-wrap gap-2">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/5 bg-surface-900/40 flex-wrap gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+            <button
+              onClick={() => setMobileHistoryOpen(true)}
+              className="md:hidden p-1.5 rounded-xl bg-white/5 text-slate-300 hover:text-white flex-shrink-0"
+              title="Chat history"
+            >
+              <History className="w-4 h-4" />
+            </button>
             {SUBJECT_OPTIONS.map((sub) => {
               const Icon = sub.icon;
               const isSelected = selectedSubject === sub.id;

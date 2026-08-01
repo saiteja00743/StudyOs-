@@ -286,14 +286,14 @@ export function SettingsPage() {
 
       <div className="grid sm:grid-cols-[200px_1fr] gap-5">
         {/* Tab sidebar */}
-        <div className="glass rounded-2xl border border-white/5 p-2 h-fit">
+        <div className="glass rounded-2xl border border-white/5 p-2 h-fit flex sm:flex-col overflow-x-auto no-scrollbar gap-1">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
               className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all text-left',
+                'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all text-left whitespace-nowrap sm:w-full',
                 activeTab === id ? 'bg-brand-500/20 text-white font-medium' : 'text-slate-400 hover:text-white hover:bg-white/5'
               )}>
-              <Icon className={cn('w-4 h-4', activeTab === id ? 'text-brand-400' : 'text-slate-500')} />
+              <Icon className={cn('w-4 h-4 flex-shrink-0', activeTab === id ? 'text-brand-400' : 'text-slate-500')} />
               {label}
             </button>
           ))}

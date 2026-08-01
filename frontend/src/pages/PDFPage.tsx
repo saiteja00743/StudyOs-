@@ -82,21 +82,21 @@ export function PDFPage() {
   const hasUploads = Object.keys(uploadProgress).length > 0;
 
   return (
-    <div className="h-[calc(100vh-5rem)] flex flex-col gap-5 overflow-y-auto no-scrollbar">
+    <div className="h-[calc(100vh-5.5rem)] flex flex-col gap-5 overflow-y-auto no-scrollbar">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
             <FileSearch className="w-6 h-6 text-brand-400" />
             PDF Intelligence
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-400 text-xs sm:text-sm mt-1">
             Upload documents and let AI extract summaries, key points, and quizzes instantly.
           </p>
         </div>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-all shadow-glow-sm"
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-brand-gradient text-white text-xs sm:text-sm font-medium hover:opacity-90 transition-all shadow-glow-sm"
         >
           <Upload className="w-4 h-4" /> Upload Document
         </button>
