@@ -14,6 +14,8 @@ export interface Database {
         Row: {
           id: string;
           full_name: string | null;
+          bio: string | null;
+          school: string | null;
           avatar_url: string | null;
           study_streak: number;
           created_at: string;
@@ -22,6 +24,8 @@ export interface Database {
         Insert: {
           id: string;
           full_name?: string | null;
+          bio?: string | null;
+          school?: string | null;
           avatar_url?: string | null;
           study_streak?: number;
           created_at?: string;
@@ -30,6 +34,8 @@ export interface Database {
         Update: {
           id?: string;
           full_name?: string | null;
+          bio?: string | null;
+          school?: string | null;
           avatar_url?: string | null;
           study_streak?: number;
           updated_at?: string;

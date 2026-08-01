@@ -52,22 +52,25 @@ function Toggle({ value, onChange, label, description }: {
 }
 
 export function SettingsPage() {
-  const { user, profile, signOut, updateProfileName } = useAuth();
+  const { user, profile, signOut, updateProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Profile fields
-  const [fullName, setFullName] = useState(profile?.full_name || user?.email?.split('@')[0] || 'Student');
-  const [bio, setBio] = useState('Computer Science student passionate about AI and algorithms.');
-  const [school, setSchool] = useState('University Student');
+  // Profile fields — initialized from cloud profile
+  const [fullName, setFullName] = useState(profile?.full_name || user?.email?.split('@')[0] || '');
+  const [bio, setBio] = useState(profile?.bio || '');
+  const [school, setSchool] = useState(profile?.school || '');
 
+  // Sync all fields when profile loads from cloud
   React.useEffect(() => {
-    if (profile?.full_name) {
-      setFullName(profile.full_name);
+    if (profile) {
+      if (profile.full_name) setFullName(profile.full_name);
+      if (profile.bio !== undefined && profile.bio !== null) setBio(profile.bio);
+      if (profile.school !== undefined && profile.school !== null) setSchool(profile.school);
     }
-  }, [profile?.full_name]);
+  }, [profile?.full_name, profile?.bio, profile?.school]);
 
   // Appearance
   const [theme, setTheme] = useState<Theme>('dark');
@@ -87,7 +90,7 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    const result = await updateProfileName(fullName);
+    const result = await updateProfile({ full_name: fullName, bio, school });
     setSaving(false);
     if (!result?.error) {
       setSaved(true);

@@ -6,6 +6,8 @@ import { supabase, rawFrom } from '@/services/supabase';
 export interface Profile {
   id: string;
   full_name: string | null;
+  bio: string | null;
+  school: string | null;
   avatar_url: string | null;
   study_streak: number;
   created_at: string;
@@ -22,6 +24,8 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: { message: string } | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: { message: string } | null }>;
+  updateProfile: (fields: { full_name?: string; bio?: string; school?: string }) => Promise<{ error: { message: string } | null }>;
+  /** @deprecated use updateProfile instead */
   updateProfileName: (fullName: string) => Promise<{ error: { message: string } | null }>;
   refreshProfile: () => Promise<void>;
 }
@@ -62,6 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const newProfile: Profile = {
           id: authUser.id,
           full_name: fallbackName,
+          bio: '',
+          school: '',
           avatar_url: authUser.user_metadata?.avatar_url || null,
           study_streak: 1,
           created_at: new Date().toISOString(),
@@ -75,6 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile({
         id: authUser.id,
         full_name: fallbackName,
+        bio: '',
+        school: '',
         avatar_url: null,
         study_streak: 1,
         created_at: new Date().toISOString(),
@@ -170,28 +178,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   };
 
-  const updateProfileName = async (fullName: string) => {
+  /** Save any subset of profile fields to Supabase cloud */
+  const updateProfile = async (fields: { full_name?: string; bio?: string; school?: string }) => {
     if (!user) return { error: { message: 'No authenticated user.' } };
 
     // Optimistic UI update
-    setProfile((prev) => prev ? { ...prev, full_name: fullName } : prev);
+    setProfile((prev) => prev ? { ...prev, ...fields } : prev);
 
-    // Persist to Supabase cloud
-    const { error } = await rawFrom('profiles')
-      .update({ full_name: fullName, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
+    const payload = { ...fields, updated_at: new Date().toISOString() };
+    const { error } = await rawFrom('profiles').update(payload).eq('id', user.id);
 
     if (error) {
-      // Revert if failed
-      await fetchProfile(user);
+      await fetchProfile(user); // revert
       return { error: { message: error.message } };
     }
 
-    // Also update Supabase auth user metadata
-    await supabase.auth.updateUser({ data: { full_name: fullName } });
+    // Keep auth user_metadata in sync when name changes
+    if (fields.full_name) {
+      await supabase.auth.updateUser({ data: { full_name: fields.full_name } });
+    }
 
     return { error: null };
   };
+
+  /** @deprecated prefer updateProfile */
+  const updateProfileName = async (fullName: string) => updateProfile({ full_name: fullName });
 
   return (
     <AuthContext.Provider
@@ -205,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         resetPassword,
         updatePassword,
+        updateProfile,
         updateProfileName,
         refreshProfile,
       }}
