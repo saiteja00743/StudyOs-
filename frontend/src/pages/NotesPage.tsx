@@ -1,0 +1,290 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  FileText, Plus, Search, Star, Sparkles, Folder, MoreVertical,
+  Trash2, Edit3, ArrowRight, Clock, Hash,
+} from 'lucide-react';
+import { NoteEditor } from '@/components/notes/NoteEditor';
+import { notesService } from '@/services/notesService';
+import { Note } from '@/types/notes';
+import { cn } from '@/utils/cn';
+
+const FOLDER_COLORS: Record<string, string> = {
+  'General': 'text-slate-400',
+  'AI & Machine Learning': 'text-purple-400',
+  'Computer Science': 'text-cyan-400',
+  'Chemistry': 'text-emerald-400',
+  'Mathematics': 'text-amber-400',
+  'Physics': 'text-blue-400',
+  'Biology': 'text-rose-400',
+  'Humanities': 'text-orange-400',
+};
+
+function getFolderColor(folder: string): string {
+  return FOLDER_COLORS[folder] || 'text-brand-400';
+}
+
+export function NotesPage() {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [activeNote, setActiveNote] = useState<Note | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFolder, setActiveFolder] = useState<'all' | 'starred' | string>('all');
+  const [folders, setFolders] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+
+  const refreshNotes = useCallback(() => {
+    const all = notesService.getAll();
+    setNotes(all);
+    setFolders(notesService.getFolders());
+  }, []);
+
+  useEffect(() => {
+    refreshNotes();
+  }, [refreshNotes]);
+
+  const handleNewNote = () => {
+    const created = notesService.create({
+      title: 'Untitled Note',
+      content: '',
+      folder: activeFolder !== 'all' && activeFolder !== 'starred' ? activeFolder : 'General',
+    });
+    refreshNotes();
+    setActiveNote(created);
+  };
+
+  const handleSave = (saved: Note) => {
+    refreshNotes();
+    setActiveNote(saved);
+  };
+
+  const handleDelete = (id: string) => {
+    notesService.delete(id);
+    if (activeNote?.id === id) setActiveNote(null);
+    refreshNotes();
+    setShowDeleteConfirm(null);
+  };
+
+  const handleToggleStar = (id: string) => {
+    notesService.toggleStar(id);
+    refreshNotes();
+    if (activeNote?.id === id) setActiveNote(notesService.getById(id) || null);
+  };
+
+  // Filter
+  const filtered = notes.filter((n) => {
+    const matchSearch =
+      !searchQuery ||
+      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      n.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchFolder =
+      activeFolder === 'all'
+        ? true
+        : activeFolder === 'starred'
+        ? n.is_starred
+        : n.folder === activeFolder;
+
+    return matchSearch && matchFolder;
+  });
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-5rem)] rounded-2xl overflow-hidden glass border border-white/5">
+      {/* Sidebar */}
+      <div className="w-56 flex flex-col border-r border-white/5 bg-surface-900/40 flex-shrink-0">
+        {/* New note button */}
+        <div className="p-3 border-b border-white/5">
+          <button
+            onClick={handleNewNote}
+            className="w-full flex items-center gap-2 py-2.5 px-3 rounded-xl bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-all shadow-glow-sm group"
+          >
+            <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
+            New Note
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 no-scrollbar">
+          {/* Static sections */}
+          {[
+            { id: 'all', label: 'All Notes', icon: FileText },
+            { id: 'starred', label: 'Starred', icon: Star },
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveFolder(id)}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left',
+                activeFolder === id
+                  ? 'bg-brand-500/20 text-white font-medium'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              )}
+            >
+              <Icon className={cn('w-4 h-4', activeFolder === id ? 'text-brand-400' : 'text-slate-500')} />
+              <span>{label}</span>
+              <span className="ml-auto text-2xs text-slate-500">
+                {id === 'all' ? notes.length : notes.filter((n) => n.is_starred).length}
+              </span>
+            </button>
+          ))}
+
+          {/* Folders */}
+          {folders.length > 0 && (
+            <>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2 mt-2">
+                Folders
+              </p>
+              {folders.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActiveFolder(f)}
+                  className={cn(
+                    'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left',
+                    activeFolder === f
+                      ? 'bg-brand-500/20 text-white font-medium'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Folder className={cn('w-4 h-4', getFolderColor(f))} />
+                  <span className="truncate">{f}</span>
+                  <span className="ml-auto text-2xs text-slate-500">
+                    {notes.filter((n) => n.folder === f).length}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+        </nav>
+
+        {/* Stats */}
+        <div className="p-3 border-t border-white/5 text-2xs text-slate-500 space-y-1">
+          <div className="flex justify-between">
+            <span>Total notes</span><span className="text-slate-300">{notes.length}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>AI-enhanced</span>
+            <span className="text-purple-400">{notes.filter((n) => n.is_ai_enhanced).length}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Notes List */}
+      <div className="w-64 flex flex-col border-r border-white/5 bg-surface-950/60 flex-shrink-0">
+        {/* Search */}
+        <div className="p-3 border-b border-white/5">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search notes..."
+              className="w-full bg-white/5 border border-white/5 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/30 outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Note cards list */}
+        <div className="flex-1 overflow-y-auto no-scrollbar p-2 space-y-1">
+          {filtered.length === 0 ? (
+            <div className="text-center py-12 text-slate-500 text-xs">
+              <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              {searchQuery ? 'No notes match your search' : 'No notes yet. Create one!'}
+            </div>
+          ) : (
+            filtered.map((note) => {
+              const isActive = activeNote?.id === note.id;
+              return (
+                <motion.div
+                  key={note.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={cn(
+                    'group relative p-3 rounded-xl cursor-pointer transition-all border',
+                    isActive
+                      ? 'bg-brand-500/15 border-brand-500/30 text-white'
+                      : 'hover:bg-white/5 border-transparent hover:border-white/5 text-slate-300'
+                  )}
+                  onClick={() => setActiveNote(note)}
+                >
+                  {/* Star */}
+                  {note.is_starred && (
+                    <Star className="absolute top-3 right-7 w-3 h-3 text-amber-400 fill-amber-400" />
+                  )}
+                  {/* AI badge */}
+                  {note.is_ai_enhanced && (
+                    <Sparkles className="absolute top-3 right-2 w-3 h-3 text-purple-400" />
+                  )}
+
+                  <p className="text-xs font-semibold truncate pr-6 mb-1">{note.title}</p>
+                  <p className="text-2xs text-slate-500 line-clamp-2 mb-2 leading-relaxed">
+                    {note.content.replace(/[#*`>_]/g, '').slice(0, 80)}...
+                  </p>
+
+                  <div className="flex items-center justify-between text-2xs text-slate-600">
+                    <span className={getFolderColor(note.folder)}>{note.folder}</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5" />
+                      {formatDate(note.updated_at)}
+                    </span>
+                  </div>
+
+                  {/* Quick actions */}
+                  {showDeleteConfirm === note.id ? (
+                    <div className="absolute inset-0 bg-surface-900/95 rounded-xl flex items-center justify-center gap-2 p-2 text-xs">
+                      <span className="text-slate-300 mr-1">Delete?</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
+                        className="px-2.5 py-1 rounded-lg bg-danger/80 text-white hover:bg-danger text-2xs"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(null); }}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 text-slate-300 text-2xs"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="absolute top-2 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleStar(note.id); }}
+                        className="p-1 hover:bg-white/10 rounded-lg text-slate-500 hover:text-amber-400 transition-all"
+                      >
+                        <Star className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(note.id); }}
+                        className="p-1 hover:bg-white/10 rounded-lg text-slate-500 hover:text-danger transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Editor Pane */}
+      <div className="flex-1 flex flex-col min-w-0 bg-surface-950/40">
+        <NoteEditor
+          note={activeNote}
+          onSave={handleSave}
+        />
+      </div>
+    </div>
+  );
+}

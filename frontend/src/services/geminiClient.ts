@@ -1,0 +1,248 @@
+/**
+ * Gemini AI Service — Browser-side integration using @google/generative-ai
+ * Works with any valid Google AI Studio key (AIzaSy..., AQ..., etc.).
+ */
+import { GoogleGenerativeAI, ChatSession as GeminiChat } from '@google/generative-ai';
+
+const KEY_STORAGE = 'studyos_gemini_api_key';
+const MODEL_STORAGE = 'studyos_gemini_active_model';
+
+const SYSTEM_PROMPTS: Record<string, string> = {
+  general: `You are StudyOS AI, an expert, encouraging academic tutor.
+Respond directly to the student's message with a clean, professional, and well-structured answer.
+Use standard markdown with clear headings (# or ##), bullet points, bold key terms, and code blocks where applicable.
+IMPORTANT: Do NOT output internal planning notes, scratchpads, meta-rules, or "User asks:" headers. Begin your response immediately with the explanation.`,
+
+  math_science: `You are StudyOS AI Science & Math Specialist.
+Solve problems step-by-step showing all working clearly.
+Use LaTeX notation for math equations ($e = mc^2$). Explain the physical/mathematical intuition before calculations.
+IMPORTANT: Respond directly without internal meta-thinking or planning checklists.`,
+
+  coding: `You are StudyOS AI Computer Science Mentor.
+Provide clean, production-ready, well-commented code snippets with syntax highlighting.
+Explain algorithm complexity (Big-O) and key data structures clearly.
+IMPORTANT: Respond directly without internal meta-thinking or planning checklists.`,
+
+  humanities: `You are StudyOS AI Essay & Humanities Tutor.
+Help students with analytical writing, historical context, thesis statements, and structured outlines.
+Provide clear, articulate feedback and guidance.
+IMPORTANT: Respond directly without internal meta-thinking or planning checklists.`,
+
+  exam_prep: `You are StudyOS AI Exam Prep Coach.
+Provide high-yield topic summaries, quick practice recall questions, and proven study strategies (active recall, spaced repetition).
+IMPORTANT: Respond directly without internal meta-thinking or planning checklists.`,
+};
+
+export function getStoredApiKey(): string {
+  return localStorage.getItem(KEY_STORAGE) || '';
+}
+
+export function setStoredApiKey(key: string) {
+  localStorage.setItem(KEY_STORAGE, key.replace(/\s+/g, ''));
+}
+
+export function clearStoredApiKey() {
+  localStorage.removeItem(KEY_STORAGE);
+  localStorage.removeItem(MODEL_STORAGE);
+}
+
+export function hasApiKey(): boolean {
+  const key = getStoredApiKey();
+  return key.length >= 15;
+}
+
+function getStoredModel(): string {
+  return localStorage.getItem(MODEL_STORAGE) || 'gemini-1.5-flash';
+}
+
+function setStoredModel(model: string) {
+  localStorage.setItem(MODEL_STORAGE, model);
+}
+
+/**
+ * Filter out any accidental scratchpad / meta-reasoning header text if output by the LLM.
+ */
+export function cleanAiResponse(text: string): string {
+  if (!text) return '';
+
+  // If response contains internal scratchpad meta header
+  if (text.startsWith('* User asks:') || text.startsWith('* Goal:') || text.startsWith('* Persona:')) {
+    const hrIndex = text.indexOf('\n---\n');
+    if (hrIndex !== -1) {
+      return text.slice(hrIndex + 5).trim();
+    }
+    const h1Index = text.search(/\n#\s/);
+    if (h1Index !== -1) {
+      return text.slice(h1Index + 1).trim();
+    }
+    const boldIndex = text.search(/\n\*\*/);
+    if (boldIndex !== -1) {
+      return text.slice(boldIndex + 1).trim();
+    }
+  }
+
+  return text;
+}
+
+class GeminiClientService {
+  private sessions: Map<string, GeminiChat> = new Map();
+  private activeModelName: string = getStoredModel();
+
+  private getClient(): GoogleGenerativeAI {
+    const key = getStoredApiKey();
+    if (!key) throw new Error('No API key configured');
+    return new GoogleGenerativeAI(key);
+  }
+
+  private getOrCreateSession(sessionId: string, subject: string): GeminiChat {
+    if (this.sessions.has(sessionId)) {
+      return this.sessions.get(sessionId)!;
+    }
+    const client = this.getClient();
+    const modelToUse = this.activeModelName || getStoredModel();
+
+    const model = client.getGenerativeModel({
+      model: modelToUse,
+      systemInstruction: SYSTEM_PROMPTS[subject] || SYSTEM_PROMPTS.general,
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+      },
+    });
+
+    const chat = model.startChat({ history: [] });
+    this.sessions.set(sessionId, chat);
+    return chat;
+  }
+
+  clearSession(sessionId: string) {
+    this.sessions.delete(sessionId);
+  }
+
+  /**
+   * Send a message and stream the response token-by-token via onChunk callback.
+   */
+  async sendMessageStream(
+    message: string,
+    subject: string,
+    sessionId: string,
+    onChunk: (partial: string) => void
+  ): Promise<string> {
+    const chat = this.getOrCreateSession(sessionId, subject);
+    const result = await chat.sendMessageStream(message);
+
+    let fullText = '';
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      fullText += text;
+      onChunk(cleanAiResponse(fullText));
+    }
+    return cleanAiResponse(fullText);
+  }
+
+  /**
+   * Send a message without streaming — returns complete response.
+   */
+  async sendMessage(message: string, subject: string, sessionId: string): Promise<string> {
+    const chat = this.getOrCreateSession(sessionId, subject);
+    const result = await chat.sendMessage(message);
+    return cleanAiResponse(result.response.text());
+  }
+
+  /**
+   * Dynamically validate key & discover working model from Google API endpoint.
+   */
+  async validateKey(key: string): Promise<{ valid: boolean; error?: string; model?: string }> {
+    const cleanKey = key.replace(/\s+/g, '');
+    if (cleanKey.length < 15) {
+      return { valid: false, error: 'Invalid API key length.' };
+    }
+
+    try {
+      // 1. Query Google's models endpoint directly
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        const message = errorData?.error?.message || `HTTP ${res.status}: ${res.statusText}`;
+        return {
+          valid: false,
+          error: `Google API Error (${res.status}): ${cleanGoogleError(message)}`,
+        };
+      }
+
+      const data = await res.json();
+      const rawModels: any[] = data.models || [];
+      const supportedModels: string[] = rawModels
+        .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+        .map((m: any) => m.name.replace('models/', ''));
+
+      if (supportedModels.length === 0) {
+        return { valid: false, error: 'No content generation models found for this API key.' };
+      }
+
+      // Priority model list
+      const candidateList = [
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-8b',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro',
+        'gemini-pro',
+      ];
+
+      const modelsToTry = [
+        ...candidateList.filter((m) => supportedModels.includes(m)),
+        ...supportedModels.filter((m) => !candidateList.includes(m)),
+      ];
+
+      const client = new GoogleGenerativeAI(cleanKey);
+      let lastErr = '';
+
+      for (const testModelName of modelsToTry) {
+        try {
+          const model = client.getGenerativeModel({ model: testModelName });
+          const testResult = await model.generateContent('Say "ok"');
+          if (testResult.response.text()) {
+            this.activeModelName = testModelName;
+            setStoredModel(testModelName);
+            this.sessions.clear();
+            return { valid: true, model: testModelName };
+          }
+        } catch (err: any) {
+          const rawMsg = err?.message || String(err);
+          lastErr = rawMsg;
+        }
+      }
+
+      if (lastErr.includes('429') || lastErr.includes('Quota exceeded')) {
+        return {
+          valid: false,
+          error: 'Rate limit / Quota exceeded (429). The Google Cloud project quota for Gemini is depleted. Please try again in 1 minute or use another project key.',
+        };
+      }
+
+      return { valid: false, error: cleanGoogleError(lastErr) || 'Failed to generate test response.' };
+    } catch (err: any) {
+      console.error('Gemini Key Validation Exception:', err);
+      return { valid: false, error: cleanGoogleError(err?.message) || 'Connection error while contacting Google API.' };
+    }
+  }
+}
+
+function cleanGoogleError(msg: string): string {
+  if (!msg) return '';
+  if (msg.includes('429') || msg.includes('Quota exceeded')) {
+    return 'Quota / Rate limit exceeded (HTTP 429). Please wait a moment or try another key/project.';
+  }
+  if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
+    return 'Invalid API Key. Please verify key from Google AI Studio.';
+  }
+  const idx = msg.indexOf('[{');
+  if (idx > 0) {
+    return msg.slice(0, idx).trim();
+  }
+  return msg;
+}
+
+export const geminiClient = new GeminiClientService();
