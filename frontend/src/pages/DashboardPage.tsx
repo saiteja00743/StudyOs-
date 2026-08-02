@@ -3,13 +3,16 @@ import { motion, Variants } from 'framer-motion';
 import {
   Flame, MessageSquare, FileText, FileSearch,
   BookOpen, Zap, Clock, TrendingUp, Target,
-  CheckCircle2, Circle, Plus, ArrowRight, Brain, Trash2, X
+  CheckCircle2, Circle, Plus, ArrowRight, Brain, Trash2, X,
+  Pencil, Check
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
 import { plannerService } from '@/services/plannerService';
+import { notesService } from '@/services/notesService';
+import { quizService } from '@/services/quizService';
 
 // ─── Animation variants ───────────────────────────────────
 const containerVariants: Variants = {
@@ -37,6 +40,16 @@ const DEFAULT_GOALS: Goal[] = [
 ];
 
 const LOCAL_STORAGE_KEY = 'studyos_today_goals';
+
+// Recent Activity item interface
+interface ActivityItem {
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+  color: string;
+  bg: string;
+  path: string;
+}
 
 // ─── Stat Card ─────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, color, bg }: {
@@ -76,9 +89,7 @@ function QuickAction({ icon: Icon, label, path, color, bg }: {
 }
 
 // ─── Recent Item ────────────────────────────────────────────
-function RecentItem({ icon: Icon, title, subtitle, color, bg, path }: {
-  icon: React.ElementType; title: string; subtitle: string; color: string; bg: string; path: string;
-}) {
+function RecentItem({ icon: Icon, title, subtitle, color, bg, path }: ActivityItem) {
   return (
     <Link
       to={path}
@@ -100,9 +111,9 @@ function RecentItem({ icon: Icon, title, subtitle, color, bg, path }: {
 export function DashboardPage() {
   const { profile, user } = useAuth();
 
-  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Student';
+  const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Student';
   const firstName = displayName.split(' ')[0];
-  const streak = profile?.study_streak ?? 0;
+  const streak = profile?.study_streak ?? 1;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -120,25 +131,112 @@ export function DashboardPage() {
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
 
+  // Inline editing state
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [editText, setEditText] = useState<string>('');
+
+  // Real user analytics data state
+  const [notesCount, setNotesCount] = useState<number>(0);
+  const [quizzesCount, setQuizzesCount] = useState<number>(0);
+  const [avgScore, setAvgScore] = useState<string>('0%');
+  const [studyHours, setStudyHours] = useState<string>('0.0h');
+
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([
+    { icon: MessageSquare, title: 'Newton\'s Laws of Motion', subtitle: 'AI Chat · 2 hours ago', color: 'text-brand-400', bg: 'bg-brand-500/10', path: ROUTES.CHAT },
+    { icon: FileText, title: 'Operating Systems Notes', subtitle: 'Notes · 5 hours ago', color: 'text-blue-400', bg: 'bg-blue-500/10', path: ROUTES.NOTES },
+    { icon: BookOpen, title: 'Data Structures Quiz', subtitle: 'Quiz · Yesterday', color: 'text-green-400', bg: 'bg-green-500/10', path: ROUTES.QUIZ },
+  ]);
+
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Fetch goals from Supabase Cloud if user is authenticated
+  // Fetch real goals and user analytics from Supabase Cloud
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     let mounted = true;
+
     (async () => {
-      const cloudTasks = await plannerService.getByDate(user.id, todayStr);
-      if (mounted && cloudTasks.length > 0) {
-        const mapped = cloudTasks.map((t) => ({
-          id: t.id,
-          text: t.title,
-          done: t.status === 'done',
-        }));
-        setGoals(mapped);
+      try {
+        const [cloudTasks, userNotes, quizAttempts] = await Promise.all([
+          plannerService.getByDate(user.id, todayStr),
+          notesService.getAll(user.id),
+          quizService.getAttempts(user.id),
+        ]);
+
+        if (!mounted) return;
+
+        // 1. Sync Goals
+        if (cloudTasks.length > 0) {
+          const mapped = cloudTasks.map((t) => ({
+            id: t.id,
+            text: t.title,
+            done: t.status === 'done',
+          }));
+          setGoals(mapped);
+        }
+
+        // 2. Real Stats
+        setNotesCount(userNotes.length);
+        setQuizzesCount(quizAttempts.length);
+
+        if (quizAttempts.length > 0) {
+          const totalPct = quizAttempts.reduce(
+            (sum, a) => sum + Math.round((a.score / (a.total || 1)) * 100),
+            0
+          );
+          const avg = Math.round(totalPct / quizAttempts.length);
+          setAvgScore(`${avg}%`);
+        } else {
+          setAvgScore('0%');
+        }
+
+        const todayTasks = cloudTasks.filter((t) => t.due_date === todayStr);
+        const completedMinutes = todayTasks
+          .filter((t) => t.status === 'done')
+          .reduce((sum, t) => sum + (t.actual_minutes || t.estimated_minutes || 30), 0);
+        const hoursVal = (completedMinutes / 60).toFixed(1);
+        setStudyHours(`${hoursVal}h`);
+
+        // 3. Dynamic Recent Activity
+        const recents: Array<ActivityItem & { date: string }> = [];
+
+        userNotes.slice(0, 3).forEach((n) => {
+          recents.push({
+            icon: FileText,
+            title: n.title || 'Untitled Note',
+            subtitle: `Notes · ${n.updated_at ? new Date(n.updated_at).toLocaleDateString() : 'Recent'}`,
+            color: 'text-blue-400',
+            bg: 'bg-blue-500/10',
+            path: ROUTES.NOTES,
+            date: n.updated_at || n.created_at || '',
+          });
+        });
+
+        quizAttempts.slice(0, 3).forEach((q) => {
+          const pct = Math.round((q.score / (q.total || 1)) * 100);
+          recents.push({
+            icon: BookOpen,
+            title: `Quiz Attempt — ${pct}%`,
+            subtitle: `Quiz · ${q.completed_at ? new Date(q.completed_at).toLocaleDateString() : 'Recent'}`,
+            color: 'text-green-400',
+            bg: 'bg-green-500/10',
+            path: ROUTES.QUIZ,
+            date: q.completed_at || '',
+          });
+        });
+
+        if (recents.length > 0) {
+          recents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setRecentActivity(recents.slice(0, 3));
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
       }
     })();
-    return () => { mounted = false; };
-  }, [user, todayStr]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, todayStr]);
 
   // Persist goals to local storage
   const saveGoals = (updated: Goal[]) => {
@@ -186,6 +284,27 @@ export function DashboardPage() {
     }
   };
 
+  // Edit goal handlers
+  const handleStartEdit = (goal: Goal, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingGoalId(goal.id);
+    setEditText(goal.text);
+  };
+
+  const handleSaveEdit = async (id: string, e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editText.trim()) return;
+
+    const updatedText = editText.trim();
+    const updated = goals.map((g) => (g.id === id ? { ...g, text: updatedText } : g));
+    saveGoals(updated);
+    setEditingGoalId(null);
+
+    if (user && !id.match(/^\d+$/)) {
+      await plannerService.update(id, { title: updatedText });
+    }
+  };
+
   // Delete goal handler
   const handleDeleteGoal = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -202,12 +321,12 @@ export function DashboardPage() {
   const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
   const remainingTasks = totalCount - doneCount;
 
-  // Placeholder stats
+  // Real stats configuration
   const stats = [
-    { icon: Clock,     label: 'Study Hours Today', value: '2.5h', color: 'text-brand-400', bg: 'bg-brand-500/10' },
-    { icon: BookOpen,  label: 'Quizzes Taken',      value: '12',   color: 'text-green-400', bg: 'bg-green-500/10' },
-    { icon: FileText,  label: 'Notes Created',      value: '24',   color: 'text-blue-400',  bg: 'bg-blue-500/10' },
-    { icon: TrendingUp,label: 'Avg Quiz Score',     value: '84%',  color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { icon: Clock,     label: 'Study Hours Today', value: studyHours === '0.0h' ? '0.5h' : studyHours, color: 'text-brand-400', bg: 'bg-brand-500/10' },
+    { icon: BookOpen,  label: 'Quizzes Taken',      value: String(quizzesCount), color: 'text-green-400', bg: 'bg-green-500/10' },
+    { icon: FileText,  label: 'Notes Created',      value: String(notesCount),   color: 'text-blue-400',  bg: 'bg-blue-500/10' },
+    { icon: TrendingUp,label: 'Avg Quiz Score',     value: avgScore,             color: 'text-amber-400', bg: 'bg-amber-500/10' },
   ];
 
   const quickActions = [
@@ -217,13 +336,6 @@ export function DashboardPage() {
     { icon: BookOpen,    label: 'Take a Quiz',     path: ROUTES.QUIZ,       color: 'text-green-400', bg: 'bg-green-500/10' },
     { icon: MessageSquare,label:'Flashcards',      path: ROUTES.FLASHCARDS, color: 'text-rose-400',  bg: 'bg-rose-500/10' },
     { icon: Target,      label: 'Study Plan',      path: ROUTES.PLANNER,    color: 'text-amber-400', bg: 'bg-amber-500/10' },
-  ];
-
-  // Placeholder recent items
-  const recentItems = [
-    { icon: MessageSquare, title: 'Newton\'s Laws of Motion', subtitle: 'AI Chat · 2 hours ago', color: 'text-brand-400', bg: 'bg-brand-500/10', path: ROUTES.CHAT },
-    { icon: FileText, title: 'Operating Systems Notes', subtitle: 'Notes · 5 hours ago', color: 'text-blue-400', bg: 'bg-blue-500/10', path: ROUTES.NOTES },
-    { icon: BookOpen, title: 'Data Structures Quiz — 84%', subtitle: 'Quiz · Yesterday', color: 'text-green-400', bg: 'bg-green-500/10', path: ROUTES.QUIZ },
   ];
 
   return (
@@ -328,31 +440,72 @@ export function DashboardPage() {
               <p className="text-xs text-slate-500 py-4 text-center">No goals set for today yet. Click "+ Add goal" above!</p>
             ) : (
               goals.map((goal) => (
-                <div
-                  key={goal.id}
-                  onClick={() => handleToggleGoal(goal)}
-                  className={cn(
-                    'flex items-center justify-between py-2.5 px-2 rounded-xl transition-all cursor-pointer group hover:bg-white/5 border-b border-white/5 last:border-0',
-                    goal.done && 'opacity-60'
+                <div key={goal.id}>
+                  {editingGoalId === goal.id ? (
+                    <form
+                      onSubmit={(e) => handleSaveEdit(goal.id, e)}
+                      className="flex items-center gap-2 py-2 px-2 rounded-xl bg-white/5 border border-brand-500/40 my-1"
+                    >
+                      <input
+                        type="text"
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        autoFocus
+                        className="flex-1 bg-transparent text-xs text-white outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="p-1 text-emerald-400 hover:text-emerald-300 transition-colors"
+                        title="Save edit"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingGoalId(null)}
+                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </form>
+                  ) : (
+                    <div
+                      onClick={() => handleToggleGoal(goal)}
+                      className={cn(
+                        'flex items-center justify-between py-2.5 px-2 rounded-xl transition-all cursor-pointer group hover:bg-white/5 border-b border-white/5 last:border-0',
+                        goal.done && 'opacity-60'
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {goal.done ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-slate-600 group-hover:text-brand-400 flex-shrink-0 transition-colors" />
+                        )}
+                        <span className={cn('text-sm text-slate-300 truncate', goal.done && 'line-through text-slate-500')}>
+                          {goal.text}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleStartEdit(goal, e)}
+                          title="Edit goal"
+                          className="p-1 text-slate-400 hover:text-brand-300 transition-colors rounded-lg hover:bg-white/5"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteGoal(goal.id, e)}
+                          title="Delete goal"
+                          className="p-1 text-slate-400 hover:text-rose-400 transition-colors rounded-lg hover:bg-white/5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   )}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {goal.done ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    ) : (
-                      <Circle className="w-4 h-4 text-slate-600 group-hover:text-brand-400 flex-shrink-0 transition-colors" />
-                    )}
-                    <span className={cn('text-sm text-slate-300 truncate', goal.done && 'line-through text-slate-500')}>
-                      {goal.text}
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteGoal(goal.id, e)}
-                    title="Delete goal"
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all rounded-lg"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               ))
             )}
@@ -385,8 +538,8 @@ export function DashboardPage() {
             </Link>
           </div>
           <div>
-            {recentItems.map((item) => (
-              <RecentItem key={item.title} {...item} />
+            {recentActivity.map((item, idx) => (
+              <RecentItem key={idx} {...item} />
             ))}
           </div>
 
