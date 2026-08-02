@@ -52,7 +52,7 @@ export function hasApiKey(): boolean {
 }
 
 function getStoredModel(): string {
-  return localStorage.getItem(MODEL_STORAGE) || 'gemini-1.5-flash';
+  return localStorage.getItem(MODEL_STORAGE) || 'gemini-flash-latest';
 }
 
 function setStoredModel(model: string) {
@@ -253,12 +253,14 @@ class GeminiClientService {
 
       // Priority model list
       const candidateList = [
+        'gemini-flash-latest',
+        'gemini-3.5-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-flash-lite-latest',
+        'gemma-4-26b-a4b-it',
         'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-flash-8b',
         'gemini-2.0-flash',
         'gemini-1.5-pro',
-        'gemini-pro',
       ];
 
       const modelsToTry = [
