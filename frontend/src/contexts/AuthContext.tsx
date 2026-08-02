@@ -80,13 +80,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await rawFrom('profiles')
         .select('*')
         .eq('id', authUser.id)
-        .single();
+        .maybeSingle();
 
       if (!error && data) {
         const prof = data as Profile;
         if (!prof.full_name) {
           const patched = { ...prof, full_name: fallbackName };
-          await rawFrom('profiles').update({ full_name: fallbackName }).eq('id', authUser.id);
+          await rawFrom('profiles').upsert({ id: authUser.id, full_name: fallbackName });
           setProfile(patched);
         } else {
           setProfile(prof);
@@ -103,7 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
         };
         const { error: insertErr } = await rawFrom('profiles').upsert(newProfile);
-        if (!insertErr) setProfile(newProfile);
+        if (insertErr) console.error('Error creating profile row in cloud:', insertErr);
+        setProfile(newProfile);
       }
     } catch (e) {
       console.error('fetchProfile error:', e);
@@ -211,14 +212,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = async (fields: { full_name?: string; bio?: string; school?: string; avatar_url?: string }) => {
     if (!user) return { error: { message: 'No authenticated user.' } };
 
-    // Optimistic UI update
-    setProfile((prev) => prev ? { ...prev, ...fields } : prev);
+    const payload = {
+      id: user.id,
+      ...fields,
+      updated_at: new Date().toISOString(),
+    };
 
-    const payload = { ...fields, updated_at: new Date().toISOString() };
-    const { error } = await rawFrom('profiles').update(payload).eq('id', user.id);
+    // Optimistic UI update
+    setProfile((prev) => {
+      if (prev) return { ...prev, ...fields, updated_at: payload.updated_at };
+      return {
+        id: user.id,
+        full_name: fields.full_name || user.email?.split('@')[0] || 'Student',
+        bio: fields.bio || '',
+        school: fields.school || '',
+        avatar_url: fields.avatar_url || null,
+        study_streak: 1,
+        created_at: new Date().toISOString(),
+        updated_at: payload.updated_at,
+      };
+    });
+
+    // Upsert to Supabase Cloud DB (inserts if row doesn't exist, updates if it does)
+    const { error } = await rawFrom('profiles').upsert(payload, { onConflict: 'id' });
 
     if (error) {
-      await fetchProfile(user); // revert
+      console.error('Supabase profile upsert error:', error);
+      await fetchProfile(user); // Revert to server state if Cloud DB write failed
       return { error: { message: error.message } };
     }
 
