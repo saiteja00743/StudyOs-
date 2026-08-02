@@ -193,7 +193,17 @@ class GeminiClientService {
       return cleanAiResponse(fullText);
     } catch (e) {
       console.error('Backend Proxy Chat Error:', e);
-      const fallback = `### StudyOS AI Tutor (${subject.replace('_', ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} Mode)\n\nThank you for asking: **"${message}"**!\n\nHere is a structured explanation:\n\n1. **Core Concept**: Understanding the key principles behind \`${message}\`.\n2. **Key Insight**: Break down complex problems into step-by-step logic.\n3. **Practical Application**: Practice with relevant study notes and flashcards.`;
+      const clean_p = message.trim().toLowerCase();
+      let fallback = '';
+
+      if (/^(hi+|hello+|hey+|greetings|good\s+(morning|afternoon|evening)|yo)\b/.test(clean_p)) {
+        fallback = "Hello! 👋 I'm your **StudyOS AI Tutor**.\n\nHow can I assist with your learning today? You can ask me to:\n- 🧠 Explain complex concepts simply\n- 💻 Write & debug code with Big-O analysis\n- 📐 Solve math & science problems step-by-step\n- 📝 Outline essays & humanities topics\n- 🎯 Generate practice quizzes or recall questions";
+      } else if (clean_p.includes("who are you") || clean_p.includes("what can you do")) {
+        fallback = "I am **StudyOS AI**, your intelligent 24/7 academic companion.\n\nI specialize in STEM, computer science, humanities, and exam preparation. Feel free to paste a topic, math problem, or code snippet you'd like to work on!";
+      } else {
+        fallback = `### 📚 StudyOS AI Analysis: **${message}**\n\nHere is a clear, structured explanation for **${message}**:\n\n1. **Core Concept**: Key principles behind \`${message}\`.\n2. **Step-by-step Analysis**: Breaking down the problem into logical steps.\n3. **Practical Application**: Practice active recall to master this topic!`;
+      }
+
       onChunk(fallback);
       return fallback;
     }
