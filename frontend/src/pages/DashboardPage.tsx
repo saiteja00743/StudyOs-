@@ -1,15 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, Variants } from 'framer-motion';
-
 import {
   Flame, MessageSquare, FileText, FileSearch,
   BookOpen, Zap, Clock, TrendingUp, Target,
-  CheckCircle2, Circle, Plus, ArrowRight, Brain,
+  CheckCircle2, Circle, Plus, ArrowRight, Brain, Trash2, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
+import { plannerService } from '@/services/plannerService';
 
 // ─── Animation variants ───────────────────────────────────
 const containerVariants: Variants = {
@@ -21,6 +21,22 @@ const cardVariants: Variants = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
+
+// Goal interface
+interface Goal {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+const DEFAULT_GOALS: Goal[] = [
+  { id: '1', text: 'Review Chapter 5 — Operating Systems', done: true },
+  { id: '2', text: 'Complete 20 Flashcards on Data Structures', done: false },
+  { id: '3', text: 'Take Quiz on Algorithms', done: false },
+  { id: '4', text: '2 Pomodoro sessions of revision', done: false },
+];
+
+const LOCAL_STORAGE_KEY = 'studyos_today_goals';
 
 // ─── Stat Card ─────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, color, bg }: {
@@ -59,27 +75,6 @@ function QuickAction({ icon: Icon, label, path, color, bg }: {
   );
 }
 
-// ─── Today's Goal Item ─────────────────────────────────────
-function GoalItem({ text, done }: { text: string; done: boolean }) {
-  return (
-    <div className={cn(
-      'flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0',
-      done && 'opacity-50'
-    )}>
-      {done
-        ? <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />
-        : <Circle className="w-4 h-4 text-slate-600 flex-shrink-0" />
-      }
-      <span className={cn(
-        'text-sm text-slate-300',
-        done && 'line-through text-slate-500'
-      )}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
 // ─── Recent Item ────────────────────────────────────────────
 function RecentItem({ icon: Icon, title, subtitle, color, bg, path }: {
   icon: React.ElementType; title: string; subtitle: string; color: string; bg: string; path: string;
@@ -112,7 +107,102 @@ export function DashboardPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Placeholder stats (will be real data in Sprint 6)
+  // ── Goals State Management ──
+  const [goals, setGoals] = useState<Goal[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : DEFAULT_GOALS;
+    } catch {
+      return DEFAULT_GOALS;
+    }
+  });
+
+  const [isAddingGoal, setIsAddingGoal] = useState(false);
+  const [newGoalText, setNewGoalText] = useState('');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Fetch goals from Supabase Cloud if user is authenticated
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+    (async () => {
+      const cloudTasks = await plannerService.getByDate(user.id, todayStr);
+      if (mounted && cloudTasks.length > 0) {
+        const mapped = cloudTasks.map((t) => ({
+          id: t.id,
+          text: t.title,
+          done: t.status === 'done',
+        }));
+        setGoals(mapped);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [user, todayStr]);
+
+  // Persist goals to local storage
+  const saveGoals = (updated: Goal[]) => {
+    setGoals(updated);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Add goal handler
+  const handleAddGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGoalText.trim()) return;
+
+    const goalTitle = newGoalText.trim();
+    setNewGoalText('');
+    setIsAddingGoal(false);
+
+    let createdId = Date.now().toString();
+
+    // Sync with Supabase if logged in
+    if (user) {
+      const created = await plannerService.create(user.id, {
+        title: goalTitle,
+        due_date: todayStr,
+      });
+      if (created) createdId = created.id;
+    }
+
+    const newGoal: Goal = { id: createdId, text: goalTitle, done: false };
+    saveGoals([...goals, newGoal]);
+  };
+
+  // Toggle goal handler
+  const handleToggleGoal = async (goal: Goal) => {
+    const updated = goals.map((g) =>
+      g.id === goal.id ? { ...g, done: !g.done } : g
+    );
+    saveGoals(updated);
+
+    if (user && !goal.id.match(/^\d+$/)) {
+      await plannerService.toggleStatus(goal.id, goal.done ? 'done' : 'todo');
+    }
+  };
+
+  // Delete goal handler
+  const handleDeleteGoal = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = goals.filter((g) => g.id !== id);
+    saveGoals(updated);
+
+    if (user && !id.match(/^\d+$/)) {
+      await plannerService.delete(id);
+    }
+  };
+
+  const doneCount = goals.filter((g) => g.done).length;
+  const totalCount = goals.length;
+  const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+  const remainingTasks = totalCount - doneCount;
+
+  // Placeholder stats
   const stats = [
     { icon: Clock,     label: 'Study Hours Today', value: '2.5h', color: 'text-brand-400', bg: 'bg-brand-500/10' },
     { icon: BookOpen,  label: 'Quizzes Taken',      value: '12',   color: 'text-green-400', bg: 'bg-green-500/10' },
@@ -127,14 +217,6 @@ export function DashboardPage() {
     { icon: BookOpen,    label: 'Take a Quiz',     path: ROUTES.QUIZ,       color: 'text-green-400', bg: 'bg-green-500/10' },
     { icon: MessageSquare,label:'Flashcards',      path: ROUTES.FLASHCARDS, color: 'text-rose-400',  bg: 'bg-rose-500/10' },
     { icon: Target,      label: 'Study Plan',      path: ROUTES.PLANNER,    color: 'text-amber-400', bg: 'bg-amber-500/10' },
-  ];
-
-  // Placeholder tasks (will be real Supabase data in Sprint 5)
-  const todayGoals = [
-    { text: 'Review Chapter 5 — Operating Systems', done: true },
-    { text: 'Complete 20 Flashcards on Data Structures', done: false },
-    { text: 'Take Quiz on Algorithms', done: false },
-    { text: '2 Pomodoro sessions of revision', done: false },
   ];
 
   // Placeholder recent items
@@ -168,7 +250,7 @@ export function DashboardPage() {
               {firstName}, ready to learn?
             </h1>
             <p className="text-white/60 text-sm">
-              You have <span className="text-white font-semibold">3 tasks</span> left for today. Keep going!
+              You have <span className="text-white font-semibold">{remainingTasks} {remainingTasks === 1 ? 'task' : 'tasks'}</span> left for today. Keep going!
             </p>
           </div>
           <div className="hidden sm:flex flex-col items-center bg-white/15 rounded-2xl px-5 py-4 border border-white/20 text-center">
@@ -210,22 +292,83 @@ export function DashboardPage() {
               <Target className="w-4 h-4 text-amber-400" />
               Today's Goals
             </h2>
-            <button className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add goal
+            <button
+              onClick={() => setIsAddingGoal(!isAddingGoal)}
+              className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 font-medium transition-colors bg-brand-500/10 px-2.5 py-1 rounded-lg border border-brand-500/20 hover:bg-brand-500/20"
+            >
+              {isAddingGoal ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {isAddingGoal ? 'Cancel' : 'Add goal'}
             </button>
           </div>
-          <div>
-            {todayGoals.map((goal) => (
-              <GoalItem key={goal.text} {...goal} />
-            ))}
+
+          {/* Add Goal Input Form */}
+          {isAddingGoal && (
+            <form onSubmit={handleAddGoal} className="mb-4 flex items-center gap-2">
+              <input
+                type="text"
+                value={newGoalText}
+                onChange={(e) => setNewGoalText(e.target.value)}
+                placeholder="What is your study goal for today?"
+                autoFocus
+                className="flex-1 bg-white/5 border border-brand-500/30 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-brand-500"
+              />
+              <button
+                type="submit"
+                disabled={!newGoalText.trim()}
+                className="px-3.5 py-2 bg-brand-gradient text-white text-xs font-semibold rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                Add
+              </button>
+            </form>
+          )}
+
+          {/* Goals List */}
+          <div className="space-y-1">
+            {goals.length === 0 ? (
+              <p className="text-xs text-slate-500 py-4 text-center">No goals set for today yet. Click "+ Add goal" above!</p>
+            ) : (
+              goals.map((goal) => (
+                <div
+                  key={goal.id}
+                  onClick={() => handleToggleGoal(goal)}
+                  className={cn(
+                    'flex items-center justify-between py-2.5 px-2 rounded-xl transition-all cursor-pointer group hover:bg-white/5 border-b border-white/5 last:border-0',
+                    goal.done && 'opacity-60'
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {goal.done ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <Circle className="w-4 h-4 text-slate-600 group-hover:text-brand-400 flex-shrink-0 transition-colors" />
+                    )}
+                    <span className={cn('text-sm text-slate-300 truncate', goal.done && 'line-through text-slate-500')}>
+                      {goal.text}
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteGoal(goal.id, e)}
+                    title="Delete goal"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all rounded-lg"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
+
+          {/* Progress bar */}
           <div className="mt-4 pt-3 border-t border-white/5">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-slate-500">Progress</span>
-              <span className="text-xs font-medium text-white">1 / 4 done</span>
+              <span className="text-xs font-medium text-white">{doneCount} / {totalCount} done</span>
             </div>
             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <div className="h-full w-1/4 bg-brand-gradient rounded-full" />
+              <div
+                className="h-full bg-brand-gradient rounded-full transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
             </div>
           </div>
         </motion.div>
@@ -260,8 +403,8 @@ export function DashboardPage() {
                 />
               ))}
             </div>
-            <span className="text-xs text-slate-500">
-              {streak > 0 ? `${streak} day streak 🔥` : 'Start your streak today!'}
+            <span className="text-xs text-slate-400">
+              <span className="text-white font-semibold">{streak} day</span> study streak active!
             </span>
           </div>
         </motion.div>
