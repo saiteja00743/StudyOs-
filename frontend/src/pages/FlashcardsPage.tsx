@@ -121,6 +121,9 @@ export function FlashcardsPage() {
   const [newBack, setNewBack] = useState('');
   const [newDeck, setNewDeck] = useState('General');
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [aiTopic, setAiTopic] = useState('');
+  const [showAiGenerate, setShowAiGenerate] = useState(false);
 
   const refresh = async () => {
     if (!user?.id) return;
@@ -154,6 +157,19 @@ export function FlashcardsPage() {
   const handleDelete = async (id: string) => {
     await flashcardService.delete(id);
     await refresh();
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiTopic.trim() || !user?.id || generating) return;
+    setGenerating(true);
+    try {
+      await flashcardService.generateFromTopic(user.id, aiTopic.trim(), 8);
+      setAiTopic('');
+      setShowAiGenerate(false);
+      await refresh();
+    } finally {
+      setGenerating(false);
+    }
   };
 
   if (mode === 'review') {
@@ -201,7 +217,11 @@ export function FlashcardsPage() {
             Spaced repetition system — {dueCards.length} cards due for review today
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setShowAiGenerate((v) => !v)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-500/15 text-violet-300 text-sm font-medium hover:bg-violet-500 hover:text-white transition-all">
+            <Sparkles className="w-4 h-4" /> Generate with AI
+          </button>
           <button onClick={() => setShowForm(true)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/10 text-sm text-slate-300 hover:bg-white/5 transition-all">
             <Plus className="w-4 h-4" /> New Card
@@ -229,6 +249,43 @@ export function FlashcardsPage() {
           </div>
         ))}
       </div>
+
+      {/* AI Generate Panel */}
+      <AnimatePresence>
+        {showAiGenerate && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="glass rounded-2xl border border-violet-500/20 p-5 overflow-hidden"
+          >
+            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-violet-400" />
+              Generate Flashcards with AI
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">Enter any topic and AI will create 8 study flashcards instantly.</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={aiTopic}
+                onChange={(e) => setAiTopic(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAiGenerate()}
+                placeholder="e.g. Photosynthesis, React Hooks, World War II..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50"
+              />
+              <button
+                onClick={handleAiGenerate}
+                disabled={!aiTopic.trim() || generating}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-gradient text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-all"
+              >
+                {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {generating ? 'Generating…' : 'Generate'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
 
       {/* Decks */}
       <div>

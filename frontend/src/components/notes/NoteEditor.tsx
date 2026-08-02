@@ -80,21 +80,47 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
     }
   }, [note, title, content, folder, tags, isStarred, userId]);
 
-  // Auto-save debounce (only for existing notes — new notes save on first manual save)
+  // Auto-save debounce for existing notes
   useEffect(() => {
-    if (!note?.id || saveState === 'idle' || saveState === 'saved') return;
-    const timer = setTimeout(handleSave, 1200);
+    if (!note?.id || !title.trim()) return;
+    const timer = setTimeout(handleSave, 1500);
     return () => clearTimeout(timer);
   }, [title, content, folder, tags, isStarred]);
 
   const handleAIEnhance = async () => {
-    if (!note) return;
+    if (!note || !content.trim()) return;
     setIsEnhancing(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    const enhancedContent = content + '\n\n---\n\n> 🧠 **AI Enhancement**: Key concepts have been identified and summarized. Consider creating flashcards from the **highlighted definitions** and **formulas** in this note.';
-    setContent(enhancedContent);
-    await notesService.update(note.id, { content: enhancedContent, is_ai_enhanced: true });
-    setIsEnhancing(false);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Enhance and expand the following study note. Keep the original content intact, then add:
+1. A brief "## Key Concepts" section listing the main ideas as bullet points
+2. A "## Quick Summary" of 2-3 sentences
+3. A "## Study Tips" section with 2-3 specific tips for remembering this material
+
+Note Title: ${title}
+Note Content:
+${content}`,
+          subject_focus: 'general',
+          session_id: `note-enhance-${Date.now()}`,
+          history: [],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const enhanced = data.content || '';
+        if (enhanced) {
+          setContent(enhanced);
+          await notesService.update(note.id, { content: enhanced, is_ai_enhanced: true });
+        }
+      }
+    } catch (e) {
+      console.error('AI enhance failed:', e);
+    } finally {
+      setIsEnhancing(false);
+    }
   };
 
   const insertFormat = (syntax: string) => {

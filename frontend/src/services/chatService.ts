@@ -1,13 +1,15 @@
 /**
- * chatService.ts — Supabase Cloud Storage
- * Chat sessions and messages stored in Supabase.
- * AI generation via Gemini (unchanged).
+ * chatService.ts — Supabase Cloud Storage + Backend AI Proxy
+ * Always routes AI generation through /api/chat backend proxy (Gemini on server).
+ * No browser-side API key required.
  */
 import { ChatMessage, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
-import { geminiClient, hasApiKey } from '@/services/geminiClient';
 import { rawFrom } from '@/services/supabase';
 
-// ── Suggested Questions (static, no DB needed) ───────────────
+const BACKEND_CHAT_URL = '/api/chat';
+const BACKEND_STREAM_URL = '/api/chat/stream';
+
+// ── Suggested Questions (static) ─────────────────────────────
 const DEFAULT_SUGGESTIONS: SuggestedQuestion[] = [
   { id: 'sq-1', category: 'Science', question: 'Quantum Entanglement',
     prompt: 'Explain quantum entanglement simply with real-world analogies.', icon: 'Atom' },
@@ -84,7 +86,6 @@ export const chatService = {
       .select('id')
       .single();
     if (error) { console.error('chatService.saveMessage:', error.message); return null; }
-    // Touch session updated_at
     await rawFrom('chat_sessions')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', sessionId);
@@ -92,8 +93,8 @@ export const chatService = {
   },
 
   /**
-   * Send a message to Gemini AI with real-time streaming.
-   * Falls back to mock response if no API key is configured.
+   * Send a message through Backend AI Proxy with real-time streaming.
+   * Always routes through FastAPI backend → Gemini AI.
    */
   async sendMessage(
     message: string,
@@ -105,57 +106,98 @@ export const chatService = {
     const messageId = `msg-${Date.now()}`;
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    if (hasApiKey()) {
-      try {
-        let content = '';
-        if (onChunk) {
-          content = await geminiClient.sendMessageStream(message, subject, sessionId, onChunk);
-        } else {
-          content = await geminiClient.sendMessage(message, subject, sessionId);
-        }
-        return { id: messageId, role: 'assistant', content, timestamp, subject_focus: subject };
-      } catch (err: unknown) {
-        const errorMsg = (err as Error)?.message || 'Unknown error';
-        const isQuota = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota');
-        const content = isQuota
-          ? `⚠️ **Gemini API quota reached.** You've hit the free-tier rate limit. Wait a minute and try again, or check your quota at [Google AI Studio](https://aistudio.google.com).`
-          : `⚠️ **AI Error**: ${errorMsg}\n\nPlease check your API key in Settings.`;
-        return { id: messageId, role: 'assistant', content, timestamp, subject_focus: subject };
-      }
-    }
+    const historyPayload = history.map((m) => ({
+      id: m.id,
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+      timestamp: m.timestamp,
+      subject_focus: m.subject_focus || subject,
+    }));
 
-    // Mock fallback
-    const fullText = generateMockTutorResponse(message, subject);
-    let accumulated = '';
-    if (onChunk) {
-      const words = fullText.split(' ');
-      for (const word of words) {
-        accumulated += (accumulated ? ' ' : '') + word;
-        onChunk(accumulated);
-        await new Promise((r) => setTimeout(r, 18));
+    try {
+      if (onChunk) {
+        // Streaming path
+        const res = await fetch(BACKEND_STREAM_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            subject_focus: subject,
+            session_id: sessionId,
+            history: historyPayload,
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error(`Backend error: ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          onChunk(fullText);
+        }
+
+        return { id: messageId, role: 'assistant', content: fullText, timestamp, subject_focus: subject };
+      } else {
+        // Non-streaming path
+        const res = await fetch(BACKEND_CHAT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            subject_focus: subject,
+            session_id: sessionId,
+            history: historyPayload,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Backend error: ${res.status}`);
+        }
+
+        const data = await res.json();
+        return { id: messageId, role: 'assistant', content: data.content || '', timestamp, subject_focus: subject };
       }
+    } catch (err: unknown) {
+      const errorMsg = (err as Error)?.message || 'Connection error';
+      console.error('chatService.sendMessage error:', errorMsg);
+
+      const content = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota')
+        ? `⚠️ **AI quota reached.** Please wait a moment and try again.`
+        : `⚠️ **Connection Error**: Could not reach the AI service.\n\nMake sure the backend server is running at \`http://localhost:8000\`.`;
+
+      return { id: messageId, role: 'assistant', content, timestamp, subject_focus: subject };
     }
-    return { id: messageId, role: 'assistant', content: fullText, timestamp, subject_focus: subject };
+  },
+
+  /**
+   * Send a one-shot AI completion via backend (for non-chat uses like PDF analysis, note expansion)
+   */
+  async askAI(prompt: string, subject: SubjectFocus = 'general'): Promise<string> {
+    try {
+      const res = await fetch(BACKEND_CHAT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: prompt,
+          subject_focus: subject,
+          session_id: `onetime-${Date.now()}`,
+          history: [],
+        }),
+      });
+      if (!res.ok) throw new Error(`Backend ${res.status}`);
+      const data = await res.json();
+      return data.content || '';
+    } catch (e) {
+      console.error('chatService.askAI error:', e);
+      return '';
+    }
   },
 };
-
-function generateMockTutorResponse(prompt: string, subject: SubjectFocus): string {
-  const labels: Record<SubjectFocus, string> = {
-    general: 'General Tutor', math_science: 'Math & Science',
-    coding: 'CS Mentor', humanities: 'Humanities Tutor', exam_prep: 'Exam Coach',
-  };
-  return `### 🧠 StudyOS AI (${labels[subject]}) — Demo Mode
-
-> ⚡ **Connect your free Gemini API key to get real AI responses!**
-> Click the key icon (🔑) in the top-right of the chat to set up in 30 seconds.
-
----
-
-Great question about: **"${prompt}"**
-
-1. **Core Concept** — Break the problem into its fundamental components.
-2. **Key Insight** — Connect abstract ideas to real-world examples.
-3. **Practice Approach** — Active recall beats passive re-reading.
-
-> 💡 **Pro Tip**: Would you like me to generate a **Practice Quiz** or **Flashcards** for this topic?`;
-}

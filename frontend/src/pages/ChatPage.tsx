@@ -8,7 +8,7 @@ import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ApiKeyModal } from '@/components/chat/ApiKeyModal';
 import { chatService } from '@/services/chatService';
-import { hasApiKey } from '@/services/geminiClient';
+
 import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage as ChatMessageType, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
 import { cn } from '@/utils/cn';
@@ -30,8 +30,6 @@ export function ChatPage() {
   const [selectedSubject, setSelectedSubject] = useState<SubjectFocus>('general');
   const [isGenerating, setIsGenerating] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [aiConnected, setAiConnected] = useState(hasApiKey());
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -42,6 +40,15 @@ export function ChatPage() {
     setSuggestedQuestions(chatService.getSuggestedQuestions());
     if (user?.id) {
       chatService.getSessions(user.id).then(setSessions);
+    }
+  }, [user?.id]);
+
+  // Auto-send preloaded context from PDF "Ask AI Tutor" action
+  useEffect(() => {
+    const preload = localStorage.getItem('studyos_chat_preload');
+    if (preload && user?.id) {
+      localStorage.removeItem('studyos_chat_preload');
+      setTimeout(() => handleSendMessage(preload), 500);
     }
   }, [user?.id]);
 
@@ -198,15 +205,10 @@ export function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* AI Status / Key button */}
-            <button
-              onClick={() => setShowApiKeyModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 shadow-glow-sm"
-              title="StudyOS Internal AI Model Active — click to configure custom key"
-            >
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              StudyOS AI Active
-            </button>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+              <Zap className="w-3.5 h-3.5" />
+              AI Active
+            </div>
 
             <button
               onClick={() => {
@@ -222,7 +224,8 @@ export function ChatPage() {
         </div>
 
         {/* Message Feed / Landing State */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
+          <div className="max-w-3xl mx-auto space-y-6">
           {messages.length === 0 ? (
             <div className="max-w-2xl mx-auto py-12 text-center space-y-6">
               <motion.div
@@ -272,6 +275,7 @@ export function ChatPage() {
             ))
           )}
           <div ref={chatEndRef} />
+          </div>
         </div>
 
         {/* Input Bar */}
@@ -312,12 +316,6 @@ export function ChatPage() {
       </div>
     </div>
 
-    {/* Gemini API Key Setup Modal */}
-    <ApiKeyModal
-      open={showApiKeyModal}
-      onClose={() => setShowApiKeyModal(false)}
-      onSuccess={() => setAiConnected(true)}
-    />
     </>
   );
 }

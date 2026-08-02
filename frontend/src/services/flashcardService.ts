@@ -101,4 +101,79 @@ export const flashcardService = {
     if (error) { console.error('flashcardService.delete:', error.message); return false; }
     return true;
   },
+
+  /**
+   * Generate real AI flashcards from a topic using the backend Gemini proxy.
+   */
+  async generateFromTopic(
+    userId: string,
+    topic: string,
+    count: number = 8,
+    deck?: string
+  ): Promise<Flashcard[]> {
+    const prompt = `Create ${count} study flashcards about "${topic}".
+
+CRITICAL: Respond ONLY with a valid JSON array. No markdown, no explanation.
+
+Format:
+[
+  {
+    "front": "Question or concept on the front of the card",
+    "back": "Clear, concise answer or explanation",
+    "hint": "Optional short hint"
+  }
+]
+
+Generate ${count} high-quality flashcards now:`;
+
+    let pairs: { front: string; back: string; hint?: string }[] = [];
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: prompt,
+          subject_focus: 'exam_prep',
+          session_id: `fc-gen-${Date.now()}`,
+          history: [],
+        }),
+      });
+      if (!res.ok) throw new Error(`Backend ${res.status}`);
+      const data = await res.json();
+      let raw: string = (data.content || '').trim();
+      if (raw.startsWith('```')) {
+        raw = raw.split('\n').slice(1, -1).join('\n').trim();
+      }
+      const start = raw.indexOf('[');
+      const end = raw.lastIndexOf(']');
+      if (start !== -1 && end !== -1) {
+        pairs = JSON.parse(raw.slice(start, end + 1));
+      }
+    } catch (e) {
+      console.error('AI flashcard generation failed:', e);
+    }
+
+    // If AI failed or returned nothing, create basic placeholders
+    if (!pairs || pairs.length === 0) {
+      pairs = Array.from({ length: count }, (_, i) => ({
+        front: `What is key concept ${i + 1} in ${topic}?`,
+        back: `Study this concept in ${topic} — add your own notes here.`,
+        hint: topic,
+      }));
+    }
+
+    const created: Flashcard[] = [];
+    for (const p of pairs.slice(0, count)) {
+      const card = await this.create(userId, {
+        front: p.front,
+        back: p.back,
+        hint: p.hint || '',
+        deck: deck || topic,
+      });
+      if (card) created.push(card);
+    }
+    return created;
+  },
 };
+
