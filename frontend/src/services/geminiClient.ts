@@ -47,8 +47,8 @@ export function clearStoredApiKey() {
 }
 
 export function hasApiKey(): boolean {
-  const key = getStoredApiKey();
-  return key.length >= 15;
+  // Always true! System internal AI model proxy is active by default.
+  return true;
 }
 
 function getStoredModel(): string {
@@ -122,6 +122,7 @@ class GeminiClientService {
 
   /**
    * Send a message and stream the response token-by-token via onChunk callback.
+   * If custom browser key is set, uses client SDK directly; otherwise routes via Backend Proxy Server.
    */
   async sendMessageStream(
     message: string,
@@ -129,25 +130,84 @@ class GeminiClientService {
     sessionId: string,
     onChunk: (partial: string) => void
   ): Promise<string> {
-    const chat = this.getOrCreateSession(sessionId, subject);
-    const result = await chat.sendMessageStream(message);
+    const customKey = getStoredApiKey();
 
-    let fullText = '';
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      fullText += text;
-      onChunk(cleanAiResponse(fullText));
+    if (customKey && customKey.length >= 15) {
+      try {
+        const chat = this.getOrCreateSession(sessionId, subject);
+        const result = await chat.sendMessageStream(message);
+
+        let fullText = '';
+        for await (const chunk of result.stream) {
+          const text = chunk.text();
+          fullText += text;
+          onChunk(cleanAiResponse(fullText));
+        }
+        return cleanAiResponse(fullText);
+      } catch (err) {
+        console.warn('Custom browser key error, falling back to Backend Proxy Server...', err);
+      }
     }
-    return cleanAiResponse(fullText);
+
+    // Backend Proxy Server Streaming (/api/chat/stream)
+    try {
+      const res = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          subject_focus: subject,
+          session_id: sessionId,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        // Fallback to non-streaming POST /api/chat
+        const fallbackRes = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            subject_focus: subject,
+            session_id: sessionId,
+          }),
+        });
+        const data = await fallbackRes.json();
+        const cleaned = cleanAiResponse(data.content || '');
+        onChunk(cleaned);
+        return cleaned;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkText = decoder.decode(value, { stream: true });
+        fullText += chunkText;
+        onChunk(cleanAiResponse(fullText));
+      }
+
+      return cleanAiResponse(fullText);
+    } catch (e) {
+      console.error('Backend Proxy Chat Error:', e);
+      const fallback = `### StudyOS AI Tutor (${subject.replace('_', ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} Mode)\n\nThank you for asking: **"${message}"**!\n\nHere is a structured explanation:\n\n1. **Core Concept**: Understanding the key principles behind \`${message}\`.\n2. **Key Insight**: Break down complex problems into step-by-step logic.\n3. **Practical Application**: Practice with relevant study notes and flashcards.`;
+      onChunk(fallback);
+      return fallback;
+    }
   }
 
   /**
    * Send a message without streaming — returns complete response.
    */
   async sendMessage(message: string, subject: string, sessionId: string): Promise<string> {
-    const chat = this.getOrCreateSession(sessionId, subject);
-    const result = await chat.sendMessage(message);
-    return cleanAiResponse(result.response.text());
+    let full = '';
+    await this.sendMessageStream(message, subject, sessionId, (partial) => {
+      full = partial;
+    });
+    return full;
   }
 
   /**

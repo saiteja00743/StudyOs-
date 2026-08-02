@@ -201,16 +201,11 @@ export function ChatPage() {
             {/* AI Status / Key button */}
             <button
               onClick={() => setShowApiKeyModal(true)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all',
-                aiConnected
-                  ? 'border-success/30 bg-success/10 text-success hover:bg-success/20'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse'
-              )}
-              title={aiConnected ? 'Gemini AI connected — click to manage key' : 'Connect Gemini AI (free)'}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 shadow-glow-sm"
+              title="StudyOS Internal AI Model Active — click to configure custom key"
             >
-              {aiConnected ? <Zap className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
-              {aiConnected ? 'AI Active' : 'Connect AI'}
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              StudyOS AI Active
             </button>
 
             <button

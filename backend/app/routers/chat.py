@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from typing import List
 
 from app.schemas.chat_schema import (
@@ -49,7 +50,6 @@ async def get_suggested_questions():
 async def send_chat_message(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
     
-    # Format history if passed
     history_dicts = [
         {"role": msg.role, "content": msg.content}
         for msg in (request.history or [])
@@ -68,3 +68,20 @@ async def send_chat_message(request: ChatRequest):
         subject_focus=request.subject_focus,
         timestamp=datetime.utcnow().isoformat()
     )
+
+@router.post("/stream")
+async def stream_chat_message(request: ChatRequest):
+    history_dicts = [
+        {"role": msg.role, "content": msg.content}
+        for msg in (request.history or [])
+    ]
+    
+    async def event_generator():
+        async for chunk in gemini_service.generate_chat_stream(
+            prompt=request.message,
+            subject=request.subject_focus,
+            history=history_dicts
+        ):
+            yield chunk
+
+    return StreamingResponse(event_generator(), media_type="text/plain")
