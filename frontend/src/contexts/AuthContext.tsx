@@ -233,13 +233,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
-    // Upsert to Supabase Cloud DB
-    const { error } = await rawFrom('profiles').upsert(payload, { onConflict: 'id' });
+    // Try UPDATE first (profile row should exist from signup trigger)
+    const { error, count } = await rawFrom('profiles')
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select();
 
     if (error) {
-      console.error('Supabase profile upsert error:', error);
-      await fetchProfile(user); // Revert optimistic update
+      console.error('Supabase profile update error:', error);
+      await fetchProfile(user);
       return { error: { message: error.message } };
+    }
+
+    // If UPDATE affected 0 rows, profile row doesn't exist yet — INSERT it
+    if (!count || count === 0) {
+      const { error: insertError } = await rawFrom('profiles').insert({
+        id: user.id,
+        full_name: fields.full_name || user.email?.split('@')[0] || 'Student',
+        bio: fields.bio || '',
+        school: fields.school || '',
+        avatar_url: fields.avatar_url || null,
+        study_streak: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      if (insertError) {
+        console.error('Supabase profile insert error:', insertError);
+        return { error: { message: insertError.message } };
+      }
     }
 
     // Sync auth user_metadata — but NEVER pass base64 data URLs (too large, causes fetch failures)
