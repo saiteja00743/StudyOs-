@@ -234,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Try UPDATE first (profile row should exist from signup trigger)
-    const { error, count } = await rawFrom('profiles')
+    const { data: updatedRows, error } = await rawFrom('profiles')
       .update({ ...fields, updated_at: new Date().toISOString() })
       .eq('id', user.id)
       .select();
@@ -245,8 +245,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: { message: error.message } };
     }
 
-    // If UPDATE affected 0 rows, profile row doesn't exist yet — INSERT it
-    if (!count || count === 0) {
+    // If UPDATE returned 0 rows, profile row doesn't exist yet — INSERT it
+    if (!updatedRows || updatedRows.length === 0) {
       const { error: insertError } = await rawFrom('profiles').insert({
         id: user.id,
         full_name: fields.full_name || user.email?.split('@')[0] || 'Student',
@@ -262,6 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: { message: insertError.message } };
       }
     }
+
 
     // Sync auth user_metadata — but NEVER pass base64 data URLs (too large, causes fetch failures)
     // Only sync short https:// URLs and text fields
