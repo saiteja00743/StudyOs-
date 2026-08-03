@@ -1,13 +1,16 @@
 /**
  * chatService.ts — Supabase Cloud Storage + Backend AI Proxy
- * Always routes AI generation through /api/chat backend proxy (Gemini on server).
- * No browser-side API key required.
+ * Routes AI generation through FastAPI backend (Render) → Gemini AI.
+ * Uses VITE_API_URL for production (Vercel → Render), falls back to Vite proxy locally.
  */
 import { ChatMessage, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
 import { rawFrom } from '@/services/supabase';
 
-const BACKEND_CHAT_URL = '/api/chat';
-const BACKEND_STREAM_URL = '/api/chat/stream';
+// Production: VITE_API_URL = https://studyos-i60n.onrender.com
+// Local dev:  empty string → Vite proxy forwards /api → localhost:8000
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const BACKEND_CHAT_URL = `${API_BASE}/api/chat`;
+const BACKEND_STREAM_URL = `${API_BASE}/api/chat/stream`;
 
 // ── Suggested Questions (static) ─────────────────────────────
 const DEFAULT_SUGGESTIONS: SuggestedQuestion[] = [
@@ -93,8 +96,7 @@ export const chatService = {
   },
 
   /**
-   * Send a message through Backend AI Proxy with real-time streaming.
-   * Always routes through FastAPI backend → Gemini AI.
+   * Send a message through FastAPI backend (Render) → Gemini AI with streaming.
    */
   async sendMessage(
     message: string,
@@ -120,12 +122,7 @@ export const chatService = {
         const res = await fetch(BACKEND_STREAM_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message,
-            subject_focus: subject,
-            session_id: sessionId,
-            history: historyPayload,
-          }),
+          body: JSON.stringify({ message, subject_focus: subject, session_id: sessionId, history: historyPayload }),
         });
 
         if (!res.ok || !res.body) {
@@ -135,62 +132,43 @@ export const chatService = {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullText = '';
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          fullText += chunk;
+          fullText += decoder.decode(value, { stream: true });
           onChunk(fullText);
         }
-
         return { id: messageId, role: 'assistant', content: fullText, timestamp, subject_focus: subject };
       } else {
         // Non-streaming path
         const res = await fetch(BACKEND_CHAT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message,
-            subject_focus: subject,
-            session_id: sessionId,
-            history: historyPayload,
-          }),
+          body: JSON.stringify({ message, subject_focus: subject, session_id: sessionId, history: historyPayload }),
         });
-
-        if (!res.ok) {
-          throw new Error(`Backend error: ${res.status}`);
-        }
-
+        if (!res.ok) throw new Error(`Backend error: ${res.status}`);
         const data = await res.json();
         return { id: messageId, role: 'assistant', content: data.content || '', timestamp, subject_focus: subject };
       }
     } catch (err: unknown) {
       const errorMsg = (err as Error)?.message || 'Connection error';
       console.error('chatService.sendMessage error:', errorMsg);
-
       const content = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota')
         ? `⚠️ **AI quota reached.** Please wait a moment and try again.`
-        : `⚠️ **Connection Error**: Could not reach the AI service.\n\nMake sure the backend server is running at \`http://localhost:8000\`.`;
-
+        : `⚠️ **Connection Error**: Could not reach the AI service.\n\nBackend: \`${API_BASE || 'localhost:8000'}\``;
       return { id: messageId, role: 'assistant', content, timestamp, subject_focus: subject };
     }
   },
 
   /**
-   * Send a one-shot AI completion via backend (for non-chat uses like PDF analysis, note expansion)
+   * Send a one-shot AI completion via backend (for PDF analysis, note expansion, etc.)
    */
   async askAI(prompt: string, subject: SubjectFocus = 'general'): Promise<string> {
     try {
       const res = await fetch(BACKEND_CHAT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: prompt,
-          subject_focus: subject,
-          session_id: `onetime-${Date.now()}`,
-          history: [],
-        }),
+        body: JSON.stringify({ message: prompt, subject_focus: subject, session_id: `onetime-${Date.now()}`, history: [] }),
       });
       if (!res.ok) throw new Error(`Backend ${res.status}`);
       const data = await res.json();
