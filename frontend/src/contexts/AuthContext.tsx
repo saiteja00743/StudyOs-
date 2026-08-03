@@ -241,7 +241,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (error) {
       console.error('Supabase profile update error:', error);
-      await fetchProfile(user);
+      // Revert optimistic update on failure
+      setProfile((prev) => prev ? { ...prev } : prev);
       return { error: { message: error.message } };
     }
 
@@ -250,9 +251,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error: insertError } = await rawFrom('profiles').insert({
         id: user.id,
         full_name: fields.full_name || user.email?.split('@')[0] || 'Student',
-        bio: fields.bio || '',
-        school: fields.school || '',
-        avatar_url: fields.avatar_url || null,
+        bio: fields.bio ?? '',
+        school: fields.school ?? '',
+        avatar_url: fields.avatar_url ?? null,
         study_streak: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -263,22 +264,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // After DB write, confirm by fetching fresh data (controlled — avoids race with auth state changes)
+    // Small delay to ensure PostgREST read-after-write consistency
+    setTimeout(() => fetchProfile(user), 300);
 
-    // Sync auth user_metadata — but NEVER pass base64 data URLs (too large, causes fetch failures)
-    // Only sync short https:// URLs and text fields
-    const isDataUrl = (v?: string) => v?.startsWith('data:');
-    if (fields.full_name || (fields.avatar_url && !isDataUrl(fields.avatar_url))) {
-      const meta: Record<string, string> = {};
-      if (fields.full_name) meta.full_name = fields.full_name;
-      if (fields.avatar_url && !isDataUrl(fields.avatar_url)) meta.avatar_url = fields.avatar_url;
-      // Fire-and-forget — don't block profile save on this
-      supabase.auth.updateUser({ data: meta }).catch((e) =>
-        console.warn('auth.updateUser non-critical failure:', e)
-      );
-    }
+    // NOTE: We intentionally do NOT call auth.updateUser here.
+    // That would trigger onAuthStateChange → fetchProfile immediately,
+    // creating a race condition that overwrites the saved data with stale reads.
 
     return { error: null };
   };
+
 
 
   /** @deprecated prefer updateProfile */
