@@ -6,11 +6,14 @@
 import { ChatMessage, ChatSession, SubjectFocus, SuggestedQuestion } from '@/types/chat';
 import { rawFrom } from '@/services/supabase';
 
-// Production: VITE_API_URL = https://studyos-i60n.onrender.com
+// Production: VITE_API_URL = https://studyos-i60n.onrender.com  (or .../api — both handled)
 // Local dev:  empty string → Vite proxy forwards /api → localhost:8000
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '')
+  .replace(/\/api\/?$/, '')  // strip trailing /api if already included in the env var
+  .replace(/\/$/, '');
 const BACKEND_CHAT_URL = `${API_BASE}/api/chat`;
 const BACKEND_STREAM_URL = `${API_BASE}/api/chat/stream`;
+
 
 // ── Suggested Questions (static) ─────────────────────────────
 const DEFAULT_SUGGESTIONS: SuggestedQuestion[] = [
