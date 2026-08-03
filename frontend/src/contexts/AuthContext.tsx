@@ -218,7 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updated_at: new Date().toISOString(),
     };
 
-    // Optimistic UI update
+    // Optimistic UI update immediately
     setProfile((prev) => {
       if (prev) return { ...prev, ...fields, updated_at: payload.updated_at };
       return {
@@ -233,25 +233,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
-    // Upsert to Supabase Cloud DB (inserts if row doesn't exist, updates if it does)
+    // Upsert to Supabase Cloud DB
     const { error } = await rawFrom('profiles').upsert(payload, { onConflict: 'id' });
 
     if (error) {
       console.error('Supabase profile upsert error:', error);
-      await fetchProfile(user); // Revert to server state if Cloud DB write failed
+      await fetchProfile(user); // Revert optimistic update
       return { error: { message: error.message } };
     }
 
-    // Keep auth user_metadata in sync when name or avatar changes
-    if (fields.full_name || fields.avatar_url) {
-      const meta: Record<string, any> = {};
+    // Sync auth user_metadata — but NEVER pass base64 data URLs (too large, causes fetch failures)
+    // Only sync short https:// URLs and text fields
+    const isDataUrl = (v?: string) => v?.startsWith('data:');
+    if (fields.full_name || (fields.avatar_url && !isDataUrl(fields.avatar_url))) {
+      const meta: Record<string, string> = {};
       if (fields.full_name) meta.full_name = fields.full_name;
-      if (fields.avatar_url) meta.avatar_url = fields.avatar_url;
-      await supabase.auth.updateUser({ data: meta });
+      if (fields.avatar_url && !isDataUrl(fields.avatar_url)) meta.avatar_url = fields.avatar_url;
+      // Fire-and-forget — don't block profile save on this
+      supabase.auth.updateUser({ data: meta }).catch((e) =>
+        console.warn('auth.updateUser non-critical failure:', e)
+      );
     }
 
     return { error: null };
   };
+
 
   /** @deprecated prefer updateProfile */
   const updateProfileName = async (fullName: string) => updateProfile({ full_name: fullName });

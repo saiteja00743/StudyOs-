@@ -118,10 +118,25 @@ export function SettingsPage() {
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
 
   // ── Save profile to Supabase ─────────────────────────────────
+  const isSavingRef = useRef(false);
+
   const saveProfileData = useCallback(async (overrideAvatar?: string) => {
+    if (isSavingRef.current) return; // Prevent concurrent saves
     if (!user) return;
+
+    isSavingRef.current = true;
     setSaveStatus('saving');
     setErrorMsg('');
+
+    // 10-second timeout guard so spinner never gets stuck
+    const timeoutId = setTimeout(() => {
+      if (isSavingRef.current) {
+        isSavingRef.current = false;
+        setSaveStatus('error');
+        setErrorMsg('Save timed out. Check your connection.');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      }
+    }, 10000);
 
     const result = await updateProfile({
       full_name: fullName.trim() || user.email?.split('@')[0] || 'Student',
@@ -129,6 +144,9 @@ export function SettingsPage() {
       school: school.trim(),
       avatar_url: overrideAvatar !== undefined ? overrideAvatar : avatarUrl,
     });
+
+    clearTimeout(timeoutId);
+    isSavingRef.current = false;
 
     if (result?.error) {
       setSaveStatus('error');
@@ -141,17 +159,19 @@ export function SettingsPage() {
     }
   }, [fullName, bio, school, avatarUrl, user, updateProfile]);
 
-  // ── Debounced auto-save (800ms after last keystroke) ─────────
+
+  // ── Debounced auto-save (1.2s after last keystroke, skip if already saving or errored) ─────
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!isDirty) return;
+    if (!isDirty || saveStatus === 'saving' || saveStatus === 'error') return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
       saveProfileData();
     }, 1200);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [fullName, bio, school, isDirty, saveProfileData]);
+  }, [fullName, bio, school, isDirty, saveStatus, saveProfileData]);
+
 
   // Field change helper — marks dirty and updates state
   const change = (setter: React.Dispatch<React.SetStateAction<string>>) => (val: string) => {
