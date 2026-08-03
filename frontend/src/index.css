@@ -44,6 +44,16 @@ html[data-compact="true"] {
 
   html {
     @apply scroll-smooth;
+    color-scheme: dark;
+  }
+
+  select {
+    color-scheme: dark;
+  }
+
+  select option {
+    background-color: #141627;
+    color: #f1f5f9;
   }
 
   body {

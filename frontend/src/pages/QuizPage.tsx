@@ -292,16 +292,16 @@ export function QuizPage() {
             value={genDifficulty} onChange={(e) => setGenDifficulty(e.target.value as Difficulty)}
             className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:ring-1 focus:ring-brand-500/50 outline-none"
           >
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
+            <option value="easy" className="bg-surface-900 text-white">Easy</option>
+            <option value="medium" className="bg-surface-900 text-white">Medium</option>
+            <option value="hard" className="bg-surface-900 text-white">Hard</option>
           </select>
           <div className="flex gap-2">
             <select
               value={genCount} onChange={(e) => setGenCount(Number(e.target.value))}
               className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-200 focus:ring-1 focus:ring-brand-500/50 outline-none"
             >
-              {[3, 5, 10, 15, 20].map((n) => <option key={n} value={n}>{n} Questions</option>)}
+              {[3, 5, 10, 15, 20].map((n) => <option key={n} value={n} className="bg-surface-900 text-white">{n} Questions</option>)}
             </select>
             <button
               onClick={handleGenerate} disabled={!genTopic.trim() || generating}

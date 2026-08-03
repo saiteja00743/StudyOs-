@@ -360,10 +360,10 @@ export function PlannerPage() {
                   className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:ring-1 focus:ring-brand-500/50" />
                 <select value={newPriority} onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
                   className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-brand-500/50">
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
+                  <option value="low" className="bg-surface-900 text-white">Low</option>
+                  <option value="medium" className="bg-surface-900 text-white">Medium</option>
+                  <option value="high" className="bg-surface-900 text-white">High</option>
+                  <option value="urgent" className="bg-surface-900 text-white">Urgent</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
