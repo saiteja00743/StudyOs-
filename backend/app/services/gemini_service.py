@@ -59,6 +59,24 @@ CANDIDATE_MODELS = [
     "gemini-2.0-flash",
 ]
 
+# ─── Quiz-specific model list (prefer non-thinking for structured output) ────
+QUIZ_CANDIDATE_MODELS = [
+    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-lite-latest",
+]
+
+QUIZ_SYSTEM_PROMPT = """You are an expert quiz generator. Generate accurate, factually correct multiple-choice questions.
+Rules:
+1. Each question MUST have exactly 4 options labeled a, b, c, d
+2. correct_answer MUST be exactly one of: a, b, c, or d
+3. Questions must be clear, unambiguous, and factually accurate
+4. Explanations must explain WHY the answer is correct
+5. Do NOT include the correct answer in the explanation label — just explain the concept
+6. Return ONLY valid JSON array, nothing else"""
+
 
 def clean_response(text: str) -> str:
     """Strip internal AI thinking/planning notes and return clean answer text."""
@@ -215,6 +233,123 @@ class GeminiService:
         except Exception as e:
             print("Gemini Stream Error:", e)
             yield f"Error connecting to AI model: {str(e)}"
+
+
+    async def generate_quiz(
+        self,
+        topic: str,
+        difficulty: str,
+        count: int
+    ) -> list:
+        """
+        Generate accurate quiz questions using Gemini with structured output.
+        Returns a list of validated question dicts.
+        """
+        import json
+        api_key = self._get_api_key()
+        if not api_key or api_key == "your_gemini_api_key_here":
+            raise ValueError("GEMINI_API_KEY not configured")
+
+        prompt = f"""Generate exactly {count} multiple-choice quiz questions about \"{topic}\" at {difficulty} difficulty level.
+
+Return ONLY a JSON array with this exact structure:
+[
+  {{
+    "question": "The complete question text?",
+    "options": [
+      {{"id": "a", "text": "First option"}},
+      {{"id": "b", "text": "Second option"}},
+      {{"id": "c", "text": "Third option"}},
+      {{"id": "d", "text": "Fourth option"}}
+    ],
+    "correct_answer": "b",
+    "explanation": "Detailed explanation of why this answer is correct and others are wrong.",
+    "difficulty": "{difficulty}"
+  }}
+]
+
+Generate exactly {count} questions. Make them accurate, educational, and cover different aspects of {topic}."""
+
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+
+        last_error = None
+        for model_name in QUIZ_CANDIDATE_MODELS:
+            try:
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=QUIZ_SYSTEM_PROMPT,
+                    generation_config={
+                        "temperature": 0.2,
+                        "top_p": 0.8,
+                        "max_output_tokens": 8192,
+                    }
+                )
+                response = model.generate_content(prompt)
+                raw = response.text if response.text else ""
+
+                # Strip markdown fences
+                cleaned = raw.strip()
+                if cleaned.startswith("```"):
+                    lines = cleaned.split("\n")
+                    # find ending fence
+                    start_idx = 1
+                    end_idx = len(lines) - 1
+                    if lines[-1].strip() == "```":
+                        end_idx = len(lines) - 1
+                    cleaned = "\n".join(lines[start_idx:end_idx]).strip()
+
+                # Extract JSON array
+                start = cleaned.find("[")
+                end = cleaned.rfind("]")
+                if start == -1 or end == -1:
+                    raise ValueError(f"No JSON array found in response. Raw: {raw[:200]}")
+
+                parsed = json.loads(cleaned[start:end + 1])
+                if not isinstance(parsed, list) or len(parsed) == 0:
+                    raise ValueError("Parsed result is not a non-empty list")
+
+                # Validate and sanitize each question
+                valid_questions = []
+                for i, q in enumerate(parsed):
+                    if not isinstance(q, dict):
+                        continue
+                    question_text = str(q.get("question", "")).strip()
+                    if not question_text:
+                        continue
+                    options = q.get("options", [])
+                    if not isinstance(options, list) or len(options) != 4:
+                        # Build default options from whatever is present
+                        options = [
+                            {"id": "a", "text": str(options[0]["text"]) if len(options) > 0 else "Option A"},
+                            {"id": "b", "text": str(options[1]["text"]) if len(options) > 1 else "Option B"},
+                            {"id": "c", "text": str(options[2]["text"]) if len(options) > 2 else "Option C"},
+                            {"id": "d", "text": str(options[3]["text"]) if len(options) > 3 else "Option D"},
+                        ]
+                    # Ensure correct_answer is a single lowercase letter
+                    correct = str(q.get("correct_answer", "a")).strip().lower()
+                    if correct not in ("a", "b", "c", "d"):
+                        correct = "a"
+                    valid_questions.append({
+                        "question": question_text,
+                        "options": [{"id": str(o.get("id", "")).lower(), "text": str(o.get("text", ""))} for o in options],
+                        "correct_answer": correct,
+                        "explanation": str(q.get("explanation", "")).strip(),
+                        "difficulty": difficulty,
+                    })
+
+                if len(valid_questions) == 0:
+                    raise ValueError("No valid questions after validation")
+
+                print(f"[quiz] Generated {len(valid_questions)} questions using model={model_name}")
+                return valid_questions
+
+            except Exception as e:
+                last_error = e
+                print(f"  [quiz model:{model_name}] Error: {e}")
+                continue
+
+        raise RuntimeError(f"Quiz generation failed with all models. Last error: {last_error}")
 
 
 gemini_service = GeminiService()

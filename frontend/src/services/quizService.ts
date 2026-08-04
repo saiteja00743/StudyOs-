@@ -11,88 +11,58 @@ async function generateQuestionsWithAI(
   difficulty: Difficulty,
   count: number
 ): Promise<Quiz['questions']> {
-  const prompt = `Generate ${count} multiple-choice quiz questions about "${topic}" at ${difficulty} difficulty level.
+  // Retry up to 2 times on transient network errors
+  const MAX_RETRIES = 2;
+  let lastError: unknown;
 
-CRITICAL: Respond ONLY with a valid JSON array. No explanation, no markdown, just the JSON array.
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch('/api/quiz/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, difficulty, count }),
+      });
 
-Required format:
-[
-  {
-    "question": "Question text here?",
-    "options": [
-      {"id": "a", "text": "Option A text"},
-      {"id": "b", "text": "Option B text"},
-      {"id": "c", "text": "Option C text"},
-      {"id": "d", "text": "Option D text"}
-    ],
-    "correct_answer": "a",
-    "explanation": "Why this answer is correct.",
-    "difficulty": "${difficulty}"
-  }
-]
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error(errBody.detail || `Server error ${res.status}`);
+      }
 
-Generate ${count} questions now:`;
+      const data = await res.json();
 
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: prompt,
-        subject_focus: 'exam_prep',
-        session_id: `quiz-gen-${Date.now()}`,
-        history: [],
-      }),
-    });
+      if (!data.success || !Array.isArray(data.questions) || data.questions.length === 0) {
+        throw new Error('Backend returned empty or invalid questions array');
+      }
 
-    if (!res.ok) throw new Error(`Backend ${res.status}`);
-    const data = await res.json();
-    const raw: string = data.content || '';
+      // Stamp IDs and enforce types
+      return data.questions.map((q: Record<string, unknown>, i: number) => ({
+        id: `q-${Date.now()}-${i}`,
+        type: 'mcq' as const,
+        question: String(q.question || ''),
+        options: (q.options as { id: string; text: string }[]) || [],
+        correct_answer: String(q.correct_answer || 'a'),
+        explanation: String(q.explanation || ''),
+        difficulty: (q.difficulty as Difficulty) || difficulty,
+      }));
 
-    // Strip markdown fences if present
-    let cleaned = raw.trim();
-    if (cleaned.startsWith('```')) {
-      const lines = cleaned.split('\n');
-      cleaned = lines.slice(1, -1).join('\n').trim();
+    } catch (e) {
+      lastError = e;
+      if (attempt < MAX_RETRIES) {
+        // Wait briefly before retry
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
     }
-
-    // Find first [ and last ]
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-    if (start === -1 || end === -1) throw new Error('No JSON array in response');
-
-    const parsed = JSON.parse(cleaned.slice(start, end + 1));
-    return parsed.map((q: Record<string, unknown>, i: number) => ({
-      id: `q-${Date.now()}-${i}`,
-      type: 'mcq' as const,
-      question: String(q.question || ''),
-      options: (q.options as { id: string; text: string }[]) || [
-        { id: 'a', text: 'Option A' }, { id: 'b', text: 'Option B' },
-        { id: 'c', text: 'Option C' }, { id: 'd', text: 'Option D' },
-      ],
-      correct_answer: String(q.correct_answer || 'a'),
-      explanation: String(q.explanation || ''),
-      difficulty: (q.difficulty as Difficulty) || difficulty,
-    }));
-  } catch (e) {
-    console.error('AI quiz generation failed, using fallback:', e);
-    // Fallback to meaningful placeholder questions
-    return Array.from({ length: count }, (_, i) => ({
-      id: `q-${Date.now()}-${i}`,
-      type: 'mcq' as const,
-      question: `What is a key concept in ${topic}? (Question ${i + 1})`,
-      options: [
-        { id: 'a', text: 'Fundamental principles and core theory' },
-        { id: 'b', text: 'Historical context and background' },
-        { id: 'c', text: 'Practical applications and use cases' },
-        { id: 'd', text: 'Common misconceptions and pitfalls' },
-      ],
-      correct_answer: 'a',
-      explanation: `Understanding the fundamental principles of ${topic} is essential for mastery.`,
-      difficulty,
-    }));
   }
+
+  // All retries exhausted — throw so the UI can show a real error
+  throw new Error(
+    lastError instanceof Error
+      ? lastError.message
+      : 'Quiz generation failed. Please check your backend connection and try again.'
+  );
 }
+
 
 export const quizService = {
   async getAll(userId: string): Promise<Quiz[]> {

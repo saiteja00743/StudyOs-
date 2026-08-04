@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import chat, pdf
+from app.routers import chat, pdf, quiz
 
 app = FastAPI(
     title="StudyOS AI API",
@@ -22,6 +22,7 @@ app.add_middleware(
 
 app.include_router(chat.router)
 app.include_router(pdf.router)
+app.include_router(quiz.router)
 
 @app.get("/")
 @app.get("/health")
