@@ -13,6 +13,7 @@ import { cn } from '@/utils/cn';
 import { plannerService } from '@/services/plannerService';
 import { notesService } from '@/services/notesService';
 import { quizService } from '@/services/quizService';
+import { useStreak } from '@/contexts/StreakContext';
 
 // ─── Animation variants ───────────────────────────────────
 const containerVariants: Variants = {
@@ -110,10 +111,11 @@ function RecentItem({ icon: Icon, title, subtitle, color, bg, path }: ActivityIt
 // ─── Dashboard Page ────────────────────────────────────────
 export function DashboardPage() {
   const { profile, user } = useAuth();
+  const { streakData, setOpenStreakModal, checkInToday } = useStreak();
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Student';
   const firstName = displayName.split(' ')[0];
-  const streak = profile?.study_streak ?? 1;
+  const streak = streakData.currentStreak;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -274,13 +276,17 @@ export function DashboardPage() {
 
   // Toggle goal handler
   const handleToggleGoal = async (goal: Goal) => {
+    const nextDone = !goal.done;
+    if (nextDone) {
+      checkInToday();
+    }
     const updated = goals.map((g) =>
-      g.id === goal.id ? { ...g, done: !g.done } : g
+      g.id === goal.id ? { ...g, done: nextDone } : g
     );
     saveGoals(updated);
 
     if (user && !goal.id.match(/^\d+$/)) {
-      await plannerService.toggleStatus(goal.id, goal.done ? 'done' : 'todo');
+      await plannerService.toggleStatus(goal.id, nextDone ? 'done' : 'todo');
     }
   };
 
@@ -365,11 +371,15 @@ export function DashboardPage() {
               You have <span className="text-white font-semibold">{remainingTasks} {remainingTasks === 1 ? 'task' : 'tasks'}</span> left for today. Keep going!
             </p>
           </div>
-          <div className="hidden sm:flex flex-col items-center bg-white/15 rounded-2xl px-5 py-4 border border-white/20 text-center">
-            <Flame className="w-8 h-8 text-amber-300 mb-1" />
+          <button
+            onClick={() => setOpenStreakModal(true)}
+            className="hidden sm:flex flex-col items-center bg-white/15 hover:bg-white/25 border border-white/20 hover:border-amber-400/40 rounded-2xl px-5 py-4 text-center cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+            title="Click to view & claim Day Streak"
+          >
+            <Flame className="w-8 h-8 text-amber-300 group-hover:text-amber-400 group-hover:scale-110 transition-transform mb-1 animate-pulse" />
             <span className="text-2xl font-black text-white">{streak}</span>
-            <span className="text-xs text-white/60">day streak</span>
-          </div>
+            <span className="text-xs text-white/70 font-medium">day streak</span>
+          </button>
         </div>
       </motion.div>
 
@@ -544,21 +554,28 @@ export function DashboardPage() {
           </div>
 
           {/* Study streak mini card */}
-          <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-3">
-            <div className="flex gap-1">
-              {[...Array(7)].map((_, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'w-4 h-4 rounded-sm',
-                    i < (streak % 7) || streak >= 7 ? 'bg-brand-500' : 'bg-white/10'
-                  )}
-                />
-              ))}
+          <div
+            onClick={() => setOpenStreakModal(true)}
+            className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/3 p-2 rounded-xl transition-all group"
+            title="Click to manage Day Streak"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                {streakData.weeklyHistory.map((day, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'w-3.5 h-3.5 rounded-sm transition-all',
+                      day.completed ? 'bg-amber-400 shadow-glow-sm' : 'bg-white/10'
+                    )}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors">
+                <span className="text-white font-semibold">{streak} day</span> study streak active!
+              </span>
             </div>
-            <span className="text-xs text-slate-400">
-              <span className="text-white font-semibold">{streak} day</span> study streak active!
-            </span>
+            <Flame className="w-4 h-4 text-amber-400 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all" />
           </div>
         </motion.div>
       </div>

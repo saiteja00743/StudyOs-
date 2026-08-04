@@ -6,6 +6,7 @@ import {
   FileText, FileSearch, BookOpen, Layers, Calendar, BarChart3, Settings, LogOut,
 } from 'lucide-react';
 import { CommandPalette } from '@/components/ui/CommandPalette';
+import { NotificationDropdown } from '@/components/notifications/NotificationDropdown';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
@@ -95,14 +96,7 @@ export function AppNavbar() {
           </div>
 
           {/* Notifications */}
-          <button
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/8 transition-all"
-            aria-label="Notifications"
-            id="app-notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-brand-500 rounded-full border-2 border-surface-900" />
-          </button>
+          <NotificationDropdown />
         </div>
       </header>
 

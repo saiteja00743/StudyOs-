@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, CheckCircle2, Circle, Clock, Plus, Trash2,
   AlertTriangle, Flame, Pause, Play, RotateCcw, Bell,
-  Target, TrendingUp, ChevronDown, Filter, Loader2,
+  Target, TrendingUp, ChevronDown, Filter, Loader2, Wind,
 } from 'lucide-react';
 import { PlannerTask, TaskPriority, TaskStatus } from '@/types/study';
 import { plannerService } from '@/services/plannerService';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
+import { BreathingWidget } from '@/components/planner/BreathingWidget';
 
 const PRIORITY_STYLES: Record<TaskPriority, { label: string; cls: string; dot: string }> = {
   low: { label: 'Low', cls: 'text-slate-400 bg-slate-500/10', dot: 'bg-slate-400' },
@@ -188,6 +189,7 @@ export function PlannerPage() {
   const [stats, setStats] = useState({ total: 0, done: 0, overdue: 0, today: 0 });
   const [filter, setFilter] = useState<'all' | 'today' | 'overdue' | TaskStatus>('all');
   const [showForm, setShowForm] = useState(false);
+  const [showBreathingModal, setShowBreathingModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newSubject, setNewSubject] = useState('');
   const [newPriority, setNewPriority] = useState<TaskPriority>('medium');
@@ -247,10 +249,21 @@ export function PlannerPage() {
               {stats.done}/{stats.total} done
             </p>
           </div>
-          <button onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-all shadow-glow-sm">
-            <Plus className="w-4 h-4" /> Add Task
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowBreathingModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-sm font-semibold hover:bg-purple-500/25 transition-all shadow-glow-sm"
+              title="Breathing Meditation & Stress Relief"
+            >
+              <Wind className="w-4 h-4 text-sky-400 animate-pulse" />
+              <span>Stress Relief</span>
+            </button>
+
+            <button onClick={() => setShowForm(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-all shadow-glow-sm">
+              <Plus className="w-4 h-4" /> Add Task
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -314,6 +327,9 @@ export function PlannerPage() {
       {/* Right sidebar */}
       <div className="space-y-5 lg:sticky lg:top-0 lg:self-start">
         <PomodoroWidget />
+
+        {/* Stress Relief & Breathing Widget */}
+        <BreathingWidget />
 
         {/* Progress chart placeholder */}
         <div className="glass rounded-2xl p-5 border border-white/5">
@@ -389,6 +405,11 @@ export function PlannerPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Stress Relief Modal */}
+      {showBreathingModal && (
+        <BreathingWidget isModal onClose={() => setShowBreathingModal(false)} />
+      )}
     </div>
   );
 }

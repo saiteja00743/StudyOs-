@@ -120,3 +120,32 @@ export interface Analytics {
 
 export type Theme = 'dark' | 'light' | 'system';
 export type Language = 'en' | 'hi' | 'es' | 'fr' | 'pt';
+
+export type NotificationType = 'streak' | 'quiz' | 'planner' | 'notes' | 'system' | 'achievement';
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  timestamp: string;
+  read: boolean;
+  actionUrl?: string;
+}
+
+export interface StreakDay {
+  dayName: string; // e.g. 'Mon'
+  dateStr: string; // 'YYYY-MM-DD'
+  isToday: boolean;
+  completed: boolean;
+}
+
+export interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDate: string | null;
+  totalActiveDays: number;
+  streakFreezes: number;
+  weeklyHistory: StreakDay[];
+}
+

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AppNavbar } from '@/components/layout/AppNavbar';
+import { StreakModal } from '@/components/streak/StreakModal';
 
 /**
  * Authenticated app layout — Sidebar (left) + Main content (right).
@@ -9,6 +10,9 @@ import { AppNavbar } from '@/components/layout/AppNavbar';
 export function AppLayout() {
   return (
     <div className="flex h-screen bg-surface-950 overflow-hidden" id="app-layout">
+      {/* Streak Modal */}
+      <StreakModal />
+
       {/* Sidebar */}
       <Sidebar />
 
