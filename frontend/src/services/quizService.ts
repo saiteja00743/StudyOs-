@@ -6,6 +6,13 @@
 import { Quiz, QuizAttempt, Difficulty } from '@/types/study';
 import { rawFrom } from '@/services/supabase';
 
+// Production: VITE_API_URL = https://studyos-i60n.onrender.com
+// Local dev:  empty string → Vite proxy forwards /api → localhost:8000
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '')
+  .replace(/\/api\/?$/, '')  // strip trailing /api if already included
+  .replace(/\/$/, '');
+const QUIZ_GENERATE_URL = `${API_BASE}/api/quiz/generate`;
+
 async function generateQuestionsWithAI(
   topic: string,
   difficulty: Difficulty,
@@ -17,7 +24,7 @@ async function generateQuestionsWithAI(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch('/api/quiz/generate', {
+      const res = await fetch(QUIZ_GENERATE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, difficulty, count }),
