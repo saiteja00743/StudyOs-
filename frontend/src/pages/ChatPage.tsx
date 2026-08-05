@@ -424,7 +424,7 @@ export function ChatPage() {
               </AnimatePresence>
 
               {/* Input row */}
-              <div className="flex items-center gap-2 glass rounded-2xl px-4 py-3 transition-all">
+              <div className="flex items-center gap-2 bg-surface-900/90 bg-white/5 backdrop-blur-md rounded-2xl px-4 py-3 transition-all border-0 shadow-lg">
                 {/* Paperclip / attach button */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -452,7 +452,7 @@ export function ChatPage() {
                   }}
                   placeholder={attachedFile ? 'Ask something about this file...' : 'Ask anything...'}
                   rows={1}
-                  className="flex-1 bg-transparent border-0 text-sm text-white placeholder-slate-500 focus:ring-0 resize-none max-h-32 no-scrollbar leading-relaxed"
+                  className="flex-1 bg-transparent border-0 outline-none focus:outline-none focus:ring-0 focus:border-0 text-sm text-white placeholder-slate-500 resize-none max-h-32 no-scrollbar leading-relaxed"
                 />
 
                 <button

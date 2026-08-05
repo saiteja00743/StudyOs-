@@ -298,8 +298,8 @@ export function ChatMessage({ message, onRegenerate }: ChatMessageProps) {
 
         {/* Content */}
         <div className={cn(
-          'rounded-2xl rounded-tl-sm border px-4 py-3',
-          'bg-surface-800/60 border-white/8 backdrop-blur-sm',
+          'rounded-2xl rounded-tl-sm px-4 py-3',
+          'bg-surface-800/80 backdrop-blur-sm border-0',
           message.isStreaming && 'animate-pulse-subtle'
         )}>
           {message.isStreaming ? (

@@ -89,7 +89,7 @@ export function ChatSidebar({
       <div className="p-3 border-t border-white/5 bg-surface-950/40 text-2xs text-slate-500 flex items-center justify-between">
         <span className="flex items-center gap-1">
           <Sparkles className="w-3 h-3 text-brand-400" />
-          Gemini AI Active
+          Groq AI Active
         </span>
         <span>Free Tier</span>
       </div>
