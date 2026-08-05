@@ -280,6 +280,129 @@ Generate exactly {count} questions. Make them accurate, educational, and cover d
         print(f"[quiz] Generated {len(valid_questions)} questions using Groq model={GROQ_QUIZ_MODEL}")
         return valid_questions
 
+    # ── Vision model for images ────────────────────────────────────────────────
+    GROQ_VISION_MODEL = "llama-3.2-11b-vision-preview"
+
+    async def analyze_image(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        question: str,
+        subject: str = "general",
+    ) -> AsyncGenerator[str, None]:
+        """Stream an AI response about an uploaded image using Groq vision model."""
+        import base64
+        api_key = self._get_api_key()
+        if not api_key:
+            yield self._no_key_response()
+            return
+
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        data_url = f"data:{mime_type};base64,{b64}"
+
+        system_prompt = self._get_system_prompt(subject)
+        user_content = [
+            {
+                "type": "image_url",
+                "image_url": {"url": data_url},
+            },
+            {
+                "type": "text",
+                "text": question or "Describe and analyse this image in detail.",
+            },
+        ]
+
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+
+        try:
+            stream = await client.chat.completions.create(
+                model=self.GROQ_VISION_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.7,
+                max_tokens=4096,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+        except Exception as e:
+            print(f"[Groq Vision] analyze_image error: {e}")
+            yield f"Error analysing image with Groq Vision: {str(e)}"
+
+    async def analyze_pdf_content(
+        self,
+        pdf_bytes: bytes,
+        question: str,
+        subject: str = "general",
+    ) -> AsyncGenerator[str, None]:
+        """Extract text from a PDF and stream an AI response about it."""
+        import io
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            pages_text = []
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages_text.append(text.strip())
+            extracted = "\n\n".join(pages_text)
+        except Exception as e:
+            yield f"Could not extract text from PDF: {str(e)}"
+            return
+
+        if not extracted.strip():
+            yield (
+                "⚠️ **No readable text found in this PDF.** "
+                "It may be a scanned image-only PDF. "
+                "Please try a PDF with selectable text."
+            )
+            return
+
+        # Truncate to ~12 000 chars to stay within context limits
+        MAX_CHARS = 12000
+        if len(extracted) > MAX_CHARS:
+            extracted = extracted[:MAX_CHARS] + "\n\n...[document truncated for context limit]"
+
+        prompt = (
+            f"The user has uploaded a PDF document. Here is the extracted text:\n\n"
+            f"---\n{extracted}\n---\n\n"
+            f"User's question: {question or 'Please summarise this document.'}"
+        )
+
+        system_prompt = self._get_system_prompt(subject)
+
+        api_key = self._get_api_key()
+        if not api_key:
+            yield self._no_key_response()
+            return
+
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+
+        try:
+            stream = await client.chat.completions.create(
+                model=GROQ_CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=4096,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+        except Exception as e:
+            print(f"[Groq PDF] analyze_pdf_content error: {e}")
+            yield f"Error analysing PDF with Groq AI: {str(e)}"
+
 
 # Export with the same name so all routers that import gemini_service work unchanged
 gemini_service = GroqAIService()

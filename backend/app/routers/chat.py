@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from typing import List
+from typing import List, Optional
 
 from app.schemas.chat_schema import (
     ChatRequest, ChatResponse, SuggestedQuestion, ChatSessionMeta
@@ -85,3 +85,61 @@ async def stream_chat_message(request: ChatRequest):
             yield chunk
 
     return StreamingResponse(event_generator(), media_type="text/plain")
+
+
+# ── File analysis endpoint (image + PDF) ──────────────────────────────────────
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_PDF_TYPE    = "application/pdf"
+MAX_IMAGE_BYTES     = 4 * 1024 * 1024   # 4 MB
+MAX_PDF_BYTES       = 20 * 1024 * 1024  # 20 MB
+
+@router.post("/analyze")
+async def analyze_file(
+    file: UploadFile = File(...),
+    message: str = Form(default=""),
+    subject_focus: str = Form(default="general"),
+):
+    """
+    Accept an uploaded image or PDF and stream an AI analysis response.
+    - Images  → Groq vision model (llama-3.2-11b-vision-preview)
+    - PDFs    → pypdf text extraction → llama-3.3-70b-versatile
+    """
+    content_type = (file.content_type or "").lower()
+    file_bytes   = await file.read()
+
+    # ── Image ──────────────────────────────────────────────────────────────────
+    if content_type in ALLOWED_IMAGE_TYPES:
+        if len(file_bytes) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="Image too large (max 4 MB).")
+
+        async def image_stream():
+            async for chunk in gemini_service.analyze_image(
+                image_bytes=file_bytes,
+                mime_type=content_type,
+                question=message,
+                subject=subject_focus,
+            ):
+                yield chunk
+
+        return StreamingResponse(image_stream(), media_type="text/plain")
+
+    # ── PDF ────────────────────────────────────────────────────────────────────
+    elif content_type == ALLOWED_PDF_TYPE or file.filename.lower().endswith(".pdf"):
+        if len(file_bytes) > MAX_PDF_BYTES:
+            raise HTTPException(status_code=413, detail="PDF too large (max 20 MB).")
+
+        async def pdf_stream():
+            async for chunk in gemini_service.analyze_pdf_content(
+                pdf_bytes=file_bytes,
+                question=message,
+                subject=subject_focus,
+            ):
+                yield chunk
+
+        return StreamingResponse(pdf_stream(), media_type="text/plain")
+
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type '{content_type}'. Please upload an image (JPG/PNG/WEBP) or PDF."
+        )

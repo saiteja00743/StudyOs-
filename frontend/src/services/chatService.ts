@@ -181,4 +181,56 @@ export const chatService = {
       return '';
     }
   },
+
+  /**
+   * Send a file (image or PDF) + optional message to the AI for analysis.
+   * Streams response via onChunk callback, same pattern as sendMessage.
+   */
+  async sendMessageWithFile(
+    file: File,
+    message: string,
+    subject: SubjectFocus = 'general',
+    sessionId: string = 'default',
+    onChunk?: (partial: string) => void
+  ): Promise<ChatMessage> {
+    const messageId = `msg-${Date.now()}`;
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('message', message || '');
+    formData.append('subject_focus', subject);
+
+    const analyzeUrl = `${API_BASE}/api/chat/analyze`;
+
+    try {
+      const res = await fetch(analyzeUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`Backend error: ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        if (onChunk) onChunk(fullText);
+      }
+
+      return { id: messageId, role: 'assistant', content: fullText, timestamp, subject_focus: subject };
+    } catch (err: unknown) {
+      const errorMsg = (err as Error)?.message || 'Connection error';
+      console.error('chatService.sendMessageWithFile error:', errorMsg);
+      const content = `⚠️ **File Analysis Error**: Could not analyse the file.\n\n\`${errorMsg}\``;
+      return { id: messageId, role: 'assistant', content, timestamp, subject_focus: subject };
+    }
+  },
 };
+

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Sparkles, Brain, Atom, Calculator, Code, Target, BookOpen,
-  Plus, Trash2, RefreshCw, History, ChevronDown,
+  Plus, Trash2, RefreshCw, History, ChevronDown, Paperclip, X, FileText, Image as ImageIcon,
 } from 'lucide-react';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -39,9 +39,31 @@ export function ChatPage() {
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
   const [mobileHistoryOpen,  setMobileHistoryOpen]  = useState(false);
   const [subjectOpen,        setSubjectOpen]        = useState(false);
+  const [attachedFile,       setAttachedFile]       = useState<File | null>(null);
+  const [filePreviewUrl,     setFilePreviewUrl]     = useState<string | null>(null);
 
-  const chatEndRef  = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatEndRef   = useRef<HTMLDivElement>(null);
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAttachedFile(file);
+    if (file.type.startsWith('image/')) {
+      setFilePreviewUrl(URL.createObjectURL(file));
+    } else {
+      setFilePreviewUrl(null);
+    }
+    // reset so re-selecting same file triggers onChange
+    e.target.value = '';
+  }, []);
+
+  const handleRemoveFile = useCallback(() => {
+    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+    setAttachedFile(null);
+    setFilePreviewUrl(null);
+  }, [filePreviewUrl]);
 
   useEffect(() => {
     setSuggestedQuestions(chatService.getSuggestedQuestions());
@@ -84,15 +106,25 @@ export function ChatPage() {
 
   const handleSendMessage = async (textToSend?: string) => {
     const content = textToSend || inputPrompt.trim();
-    if (!content || isGenerating || !user?.id) return;
+    const hasFile = !!attachedFile;
+    if (!content && !hasFile) return;
+    if (isGenerating || !user?.id) return;
 
+    const fileToSend = attachedFile;
+    const previewUrl = filePreviewUrl;
     setInputPrompt('');
+    handleRemoveFile();
     setIsGenerating(true);
+
+    // Build display label for user message (include filename if file attached)
+    const displayContent = fileToSend
+      ? `📎 **${fileToSend.name}**${content ? `\n\n${content}` : ''}`
+      : content;
 
     const userMessage: ChatMessageType = {
       id: `usr-${Date.now()}`,
       role: 'user',
-      content,
+      content: displayContent,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       subject_focus: selectedSubject,
     };
@@ -122,16 +154,21 @@ export function ChatPage() {
     }]);
 
     try {
-      const resultMessage = await chatService.sendMessage(
-        content, selectedSubject, nextMessages, currentSessionId,
-        (streamedChunk) => {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === streamingMsgId ? { ...msg, content: streamedChunk, isStreaming: true } : msg
-            )
+      const onChunk = (streamedChunk: string) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === streamingMsgId ? { ...msg, content: streamedChunk, isStreaming: true } : msg
+          )
+        );
+      };
+
+      const resultMessage = fileToSend
+        ? await chatService.sendMessageWithFile(
+            fileToSend, content, selectedSubject, currentSessionId, onChunk
+          )
+        : await chatService.sendMessage(
+            content, selectedSubject, nextMessages, currentSessionId, onChunk
           );
-        }
-      );
 
       const finalMessages = [...nextMessages, { ...resultMessage, isStreaming: false }];
       setMessages(finalMessages);
@@ -335,10 +372,74 @@ export function ChatPage() {
             </div>
           </div>
 
-          {/* ── INPUT BAR (full-width, reference style) ──────────── */}
-          <div className="p-4 border-t border-white/5 bg-surface-900/60">
+          {/* ── INPUT BAR ─────────────────────────────────────────── */}
+          <div className="p-4 bg-surface-900/60">
             <div className="max-w-3xl mx-auto">
-              <div className="flex items-center gap-2 glass border border-white/10 focus-within:border-brand-500/50 rounded-2xl px-4 py-3 transition-all">
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              {/* File preview chip (shows above input when a file is attached) */}
+              <AnimatePresence>
+                {attachedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="mb-2 flex items-center gap-2"
+                  >
+                    {filePreviewUrl ? (
+                      /* Image thumbnail */
+                      <div className="relative group">
+                        <img
+                          src={filePreviewUrl}
+                          alt="attachment"
+                          className="h-16 w-auto max-w-[120px] rounded-xl object-cover border border-white/10"
+                        />
+                        <button
+                          onClick={handleRemoveFile}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-400 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* PDF chip */
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-500/15 border border-brand-500/30 text-brand-300 text-xs font-medium">
+                        <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="max-w-[200px] truncate">{attachedFile.name}</span>
+                        <button onClick={handleRemoveFile} className="ml-1 hover:text-red-400 transition-colors">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Input row */}
+              <div className="flex items-center gap-2 glass rounded-2xl px-4 py-3 transition-all">
+                {/* Paperclip / attach button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isGenerating}
+                  title="Attach image or PDF"
+                  className={cn(
+                    'w-8 h-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0',
+                    attachedFile
+                      ? 'text-brand-400 bg-brand-500/15'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                  )}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
                 <textarea
                   ref={textareaRef}
                   value={inputPrompt}
@@ -349,17 +450,17 @@ export function ChatPage() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Ask anything..."
+                  placeholder={attachedFile ? 'Ask something about this file...' : 'Ask anything...'}
                   rows={1}
                   className="flex-1 bg-transparent border-0 text-sm text-white placeholder-slate-500 focus:ring-0 resize-none max-h-32 no-scrollbar leading-relaxed"
                 />
 
                 <button
                   onClick={() => handleSendMessage()}
-                  disabled={!inputPrompt.trim() || isGenerating}
+                  disabled={(!inputPrompt.trim() && !attachedFile) || isGenerating}
                   className={cn(
                     'w-9 h-9 rounded-xl flex items-center justify-center transition-all flex-shrink-0',
-                    inputPrompt.trim() && !isGenerating
+                    (inputPrompt.trim() || attachedFile) && !isGenerating
                       ? 'bg-brand-gradient text-white shadow-glow-sm hover:scale-105'
                       : 'bg-white/5 text-slate-600 cursor-not-allowed'
                   )}
@@ -372,7 +473,7 @@ export function ChatPage() {
               </div>
 
               <p className="text-center text-2xs text-slate-600 mt-2">
-                StudyOS AI · Powered by Gemini · Verify critical facts
+                StudyOS AI · Powered by Groq · Supports images &amp; PDFs
               </p>
             </div>
           </div>
