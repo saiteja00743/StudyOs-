@@ -3,7 +3,7 @@ import re
 import asyncio
 from typing import AsyncGenerator, List, Dict
 
-# ─── System Prompts (strict: no thinking output) ─────────────────────────────
+# ─── System Prompts ────────────────────────────────────────────────────────────
 SUBJECT_SYSTEM_PROMPTS: Dict[str, str] = {
     "general": (
         "You are StudyOS AI, an expert academic tutor. "
@@ -46,27 +46,10 @@ SUBJECT_SYSTEM_PROMPTS: Dict[str, str] = {
     ),
 }
 
-# ─── Priority model list (tested working with free tier) ─────────────────────
-CANDIDATE_MODELS = [
-    "gemini-flash-latest",
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemma-4-26b-a4b-it",
-    "gemma-4-31b-it",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash",
-]
-
-# ─── Quiz-specific model list (prefer non-thinking for structured output) ────
-QUIZ_CANDIDATE_MODELS = [
-    "gemini-flash-latest",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-3.5-flash",
-    "gemini-flash-lite-latest",
-]
+# ─── Groq model config ─────────────────────────────────────────────────────────
+# Primary model: llama-3.3-70b-versatile — fast, high quality, generous free tier
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
+GROQ_QUIZ_MODEL = os.getenv("GROQ_QUIZ_MODEL", "llama-3.3-70b-versatile")
 
 QUIZ_SYSTEM_PROMPT = """You are an expert quiz generator. Generate accurate, factually correct multiple-choice questions.
 Rules:
@@ -90,12 +73,9 @@ def clean_response(text: str) -> str:
     for line in lines:
         stripped = line.strip()
 
-        # Skip blank lines at the top
         if skip_until_real_content and not stripped:
             continue
 
-        # Detect and skip internal planning/thinking bullet patterns
-        # These are lines like: "* Definition (What is it?)" or "* The user wants..."
         if re.match(
             r"^\*\s+(The user|I should|I will|I need|Goal:|Persona:|Check|Focus|Start|Use|Format|Tone|Include|Note:|Let me|First,|Then,|Finally,)",
             stripped,
@@ -103,7 +83,6 @@ def clean_response(text: str) -> str:
         ):
             continue
 
-        # If we hit a real line (heading, bold, numbered, or regular text)
         if stripped:
             skip_until_real_content = False
             cleaned_lines.append(line)
@@ -112,31 +91,29 @@ def clean_response(text: str) -> str:
                 cleaned_lines.append(line)
 
     result = "\n".join(cleaned_lines).strip()
-
-    # If after stripping we have nothing meaningful, return original
-    if not result:
-        return text.strip()
-
-    return result
+    return result if result else text.strip()
 
 
-class GeminiService:
+class GroqAIService:
     def __init__(self):
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+        pass
 
     def _get_api_key(self) -> str:
-        return os.getenv("GEMINI_API_KEY") or os.getenv("VITE_GEMINI_API_KEY") or ""
+        return os.getenv("GROQ_API_KEY", "")
 
     def _get_system_prompt(self, subject: str) -> str:
         return SUBJECT_SYSTEM_PROMPTS.get(subject, SUBJECT_SYSTEM_PROMPTS["general"])
 
-    def _build_contents(self, prompt: str, history: List[Dict[str, str]]) -> list:
-        contents = []
+    def _build_messages(self, prompt: str, history: List[Dict[str, str]], system_prompt: str) -> list:
+        messages = [{"role": "system", "content": system_prompt}]
         for h in (history or []):
-            role = "user" if h.get("role") == "user" else "model"
-            contents.append({"role": role, "parts": [h.get("content", "")]})
-        contents.append({"role": "user", "parts": [prompt]})
-        return contents
+            role = "user" if h.get("role") == "user" else "assistant"
+            messages.append({"role": role, "content": h.get("content", "")})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
+    def _no_key_response(self) -> str:
+        return "Hello! 👋 I'm StudyOS AI. Please configure your Groq API key (GROQ_API_KEY) to enable AI responses."
 
     async def generate_chat_response(
         self,
@@ -145,38 +122,27 @@ class GeminiService:
         history: List[Dict[str, str]] = None
     ) -> str:
         api_key = self._get_api_key()
-        system_instruction = self._get_system_prompt(subject)
-        contents = self._build_contents(prompt, history)
+        if not api_key:
+            return self._no_key_response()
 
-        if not api_key or api_key == "your_gemini_api_key_here":
-            return "Hello! 👋 I'm StudyOS AI. Please configure your Gemini API key to enable real AI responses."
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+
+        messages = self._build_messages(prompt, history, self._get_system_prompt(subject))
 
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-
-            for model_name in CANDIDATE_MODELS:
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=model_name,
-                        system_instruction=system_instruction,
-                        generation_config={
-                            "temperature": 0.7,
-                            "top_p": 0.95,
-                            "max_output_tokens": 4096,
-                        }
-                    )
-                    response = model.generate_content(contents)
-                    if response.text:
-                        return clean_response(response.text)
-                except Exception as m_err:
-                    print(f"  [model:{model_name}] Error: {m_err}")
-                    continue
-
-            return "I encountered an issue connecting to the AI model. Please try again."
+            completion = await client.chat.completions.create(
+                model=GROQ_CHAT_MODEL,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=4096,
+                top_p=0.95,
+            )
+            raw = completion.choices[0].message.content or ""
+            return clean_response(raw)
         except Exception as e:
-            print("Gemini API Error:", e)
-            return f"Error communicating with Gemini AI: {str(e)}"
+            print(f"[Groq] generate_chat_response error: {e}")
+            return f"Error communicating with Groq AI: {str(e)}"
 
     async def generate_chat_stream(
         self,
@@ -185,55 +151,34 @@ class GeminiService:
         history: List[Dict[str, str]] = None
     ) -> AsyncGenerator[str, None]:
         api_key = self._get_api_key()
-        system_instruction = self._get_system_prompt(subject)
-        contents = self._build_contents(prompt, history)
-
-        if not api_key or api_key == "your_gemini_api_key_here":
-            yield "Hello! 👋 I'm StudyOS AI. Please configure your Gemini API key to enable real AI responses."
+        if not api_key:
+            yield self._no_key_response()
             return
 
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+
+        messages = self._build_messages(prompt, history, self._get_system_prompt(subject))
+
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
+            # True async streaming — tokens arrive as they're generated
+            stream = await client.chat.completions.create(
+                model=GROQ_CHAT_MODEL,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=4096,
+                top_p=0.95,
+                stream=True,
+            )
 
-            for model_name in CANDIDATE_MODELS:
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=model_name,
-                        system_instruction=system_instruction,
-                        generation_config={
-                            "temperature": 0.7,
-                            "top_p": 0.95,
-                            "max_output_tokens": 4096,
-                        }
-                    )
-
-                    # Accumulate full response then clean it
-                    response = model.generate_content(contents, stream=True)
-                    full_text = ""
-                    for chunk in response:
-                        if chunk.text:
-                            full_text += chunk.text
-
-                    cleaned = clean_response(full_text)
-
-                    # Stream the cleaned text word by word for real-time feel
-                    words = cleaned.split(" ")
-                    for i, word in enumerate(words):
-                        yield word + (" " if i < len(words) - 1 else "")
-                        await asyncio.sleep(0.005)
-                    return
-
-                except Exception as m_err:
-                    print(f"  [stream model:{model_name}] Error: {m_err}")
-                    continue
-
-            yield "I encountered an issue connecting to the AI model. Please try again."
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
 
         except Exception as e:
-            print("Gemini Stream Error:", e)
-            yield f"Error connecting to AI model: {str(e)}"
-
+            print(f"[Groq] generate_chat_stream error: {e}")
+            yield f"Error connecting to Groq AI: {str(e)}"
 
     async def generate_quiz(
         self,
@@ -241,16 +186,13 @@ class GeminiService:
         difficulty: str,
         count: int
     ) -> list:
-        """
-        Generate accurate quiz questions using Gemini with structured output.
-        Returns a list of validated question dicts.
-        """
+        """Generate quiz questions using Groq. Returns validated question dicts."""
         import json
         api_key = self._get_api_key()
-        if not api_key or api_key == "your_gemini_api_key_here":
-            raise ValueError("GEMINI_API_KEY not configured")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not configured")
 
-        prompt = f"""Generate exactly {count} multiple-choice quiz questions about \"{topic}\" at {difficulty} difficulty level.
+        prompt = f"""Generate exactly {count} multiple-choice quiz questions about "{topic}" at {difficulty} difficulty level.
 
 Return ONLY a JSON array with this exact structure:
 [
@@ -270,86 +212,74 @@ Return ONLY a JSON array with this exact structure:
 
 Generate exactly {count} questions. Make them accurate, educational, and cover different aspects of {topic}."""
 
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
 
-        last_error = None
-        for model_name in QUIZ_CANDIDATE_MODELS:
-            try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=QUIZ_SYSTEM_PROMPT,
-                    generation_config={
-                        "temperature": 0.2,
-                        "top_p": 0.8,
-                        "max_output_tokens": 8192,
-                    }
-                )
-                response = model.generate_content(prompt)
-                raw = response.text if response.text else ""
+        try:
+            completion = await client.chat.completions.create(
+                model=GROQ_QUIZ_MODEL,
+                messages=[
+                    {"role": "system", "content": QUIZ_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=8192,
+                top_p=0.8,
+            )
+            raw = completion.choices[0].message.content or ""
+        except Exception as e:
+            raise RuntimeError(f"Groq quiz generation failed: {e}")
 
-                # Strip markdown fences
-                cleaned = raw.strip()
-                if cleaned.startswith("```"):
-                    lines = cleaned.split("\n")
-                    # find ending fence
-                    start_idx = 1
-                    end_idx = len(lines) - 1
-                    if lines[-1].strip() == "```":
-                        end_idx = len(lines) - 1
-                    cleaned = "\n".join(lines[start_idx:end_idx]).strip()
+        # Strip markdown fences if present
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            end_idx = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+            cleaned = "\n".join(lines[1:end_idx]).strip()
 
-                # Extract JSON array
-                start = cleaned.find("[")
-                end = cleaned.rfind("]")
-                if start == -1 or end == -1:
-                    raise ValueError(f"No JSON array found in response. Raw: {raw[:200]}")
+        # Extract JSON array
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start == -1 or end == -1:
+            raise ValueError(f"No JSON array in Groq response. Raw: {raw[:200]}")
 
-                parsed = json.loads(cleaned[start:end + 1])
-                if not isinstance(parsed, list) or len(parsed) == 0:
-                    raise ValueError("Parsed result is not a non-empty list")
+        parsed = json.loads(cleaned[start:end + 1])
+        if not isinstance(parsed, list) or len(parsed) == 0:
+            raise ValueError("Parsed result is not a non-empty list")
 
-                # Validate and sanitize each question
-                valid_questions = []
-                for i, q in enumerate(parsed):
-                    if not isinstance(q, dict):
-                        continue
-                    question_text = str(q.get("question", "")).strip()
-                    if not question_text:
-                        continue
-                    options = q.get("options", [])
-                    if not isinstance(options, list) or len(options) != 4:
-                        # Build default options from whatever is present
-                        options = [
-                            {"id": "a", "text": str(options[0]["text"]) if len(options) > 0 else "Option A"},
-                            {"id": "b", "text": str(options[1]["text"]) if len(options) > 1 else "Option B"},
-                            {"id": "c", "text": str(options[2]["text"]) if len(options) > 2 else "Option C"},
-                            {"id": "d", "text": str(options[3]["text"]) if len(options) > 3 else "Option D"},
-                        ]
-                    # Ensure correct_answer is a single lowercase letter
-                    correct = str(q.get("correct_answer", "a")).strip().lower()
-                    if correct not in ("a", "b", "c", "d"):
-                        correct = "a"
-                    valid_questions.append({
-                        "question": question_text,
-                        "options": [{"id": str(o.get("id", "")).lower(), "text": str(o.get("text", ""))} for o in options],
-                        "correct_answer": correct,
-                        "explanation": str(q.get("explanation", "")).strip(),
-                        "difficulty": difficulty,
-                    })
-
-                if len(valid_questions) == 0:
-                    raise ValueError("No valid questions after validation")
-
-                print(f"[quiz] Generated {len(valid_questions)} questions using model={model_name}")
-                return valid_questions
-
-            except Exception as e:
-                last_error = e
-                print(f"  [quiz model:{model_name}] Error: {e}")
+        # Validate and sanitize each question
+        valid_questions = []
+        for q in parsed:
+            if not isinstance(q, dict):
                 continue
+            question_text = str(q.get("question", "")).strip()
+            if not question_text:
+                continue
+            options = q.get("options", [])
+            if not isinstance(options, list) or len(options) != 4:
+                options = [
+                    {"id": "a", "text": str(options[0]["text"]) if len(options) > 0 else "Option A"},
+                    {"id": "b", "text": str(options[1]["text"]) if len(options) > 1 else "Option B"},
+                    {"id": "c", "text": str(options[2]["text"]) if len(options) > 2 else "Option C"},
+                    {"id": "d", "text": str(options[3]["text"]) if len(options) > 3 else "Option D"},
+                ]
+            correct = str(q.get("correct_answer", "a")).strip().lower()
+            if correct not in ("a", "b", "c", "d"):
+                correct = "a"
+            valid_questions.append({
+                "question": question_text,
+                "options": [{"id": str(o.get("id", "")).lower(), "text": str(o.get("text", ""))} for o in options],
+                "correct_answer": correct,
+                "explanation": str(q.get("explanation", "")).strip(),
+                "difficulty": difficulty,
+            })
 
-        raise RuntimeError(f"Quiz generation failed with all models. Last error: {last_error}")
+        if len(valid_questions) == 0:
+            raise ValueError("No valid questions after validation")
+
+        print(f"[quiz] Generated {len(valid_questions)} questions using Groq model={GROQ_QUIZ_MODEL}")
+        return valid_questions
 
 
-gemini_service = GeminiService()
+# Export with the same name so all routers that import gemini_service work unchanged
+gemini_service = GroqAIService()
