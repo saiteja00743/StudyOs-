@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import UnderlineExtension from '@tiptap/extension-underline';
+import HighlightExtension from '@tiptap/extension-highlight';
+import TaskListExtension from '@tiptap/extension-task-list';
+import TaskItemExtension from '@tiptap/extension-task-item';
+import ImageExtension from '@tiptap/extension-image';
 import {
   Save, Star, StarOff, Sparkles, Tag, Folder, X, CheckCircle2,
   Loader2, Type, Bold, Italic, List, Hash, Quote, Code2,
@@ -27,23 +34,9 @@ interface SlashCommand {
   label: string;
   sub: string;
   icon: React.ElementType;
-  insert: string;
+  action: (editor: any) => void;
   isAction?: 'draw';
 }
-
-const SLASH_COMMANDS: SlashCommand[] = [
-  { id: 'h1',        label: 'Heading 1',  sub: 'Big section heading',    icon: Hash,        insert: '# ' },
-  { id: 'h2',        label: 'Heading 2',  sub: 'Medium sub-heading',     icon: Hash,        insert: '## ' },
-  { id: 'checklist', label: 'Checklist',  sub: 'Interactive task list',  icon: CheckSquare, insert: '- [ ] ' },
-  { id: 'table',     label: 'Table',      sub: 'Simple markdown table',  icon: Table,       insert: '| Column 1 | Column 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n' },
-  { id: 'code',      label: 'Code Block', sub: 'Syntax highlighted code',icon: Code2,      insert: '```javascript\n// Write code here\n```\n' },
-  { id: 'image',     label: 'Image',      sub: 'Embed external image',   icon: ImageIcon,   insert: '![Image description](https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80)\n' },
-  { id: 'divider',   label: 'Divider',    sub: 'Horizontal line break',  icon: Minus,       insert: '\n---\n' },
-  { id: 'quote',     label: 'Quote',      sub: 'Blockquote text',        icon: Quote,       insert: '> ' },
-  { id: 'math',      label: 'Math',       sub: 'LaTeX math formula',     icon: Sigma,       insert: '$$ e = mc^2 $$\n' },
-  { id: 'callout',   label: 'Callout',    sub: 'Highlighted note box',   icon: Lightbulb,   insert: '> [!NOTE]\n> Key takeaway or summary note\n' },
-  { id: 'sketch',    label: 'Sketch & Draw', sub: 'Draw freehand diagrams', icon: PenTool, insert: '', isAction: 'draw' },
-];
 
 export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
   const [title, setTitle] = useState('');
@@ -60,16 +53,28 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
   const [wordCount, setWordCount] = useState(0);
   const [showSketchModal, setShowSketchModal] = useState(false);
 
-  // Undo & Redo History State
-  const [historyStack, setHistoryStack] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState<number>(-1);
-
   // Slash menu state
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // ─── Tiptap Editor Initialization ──────────────────────────────────────────
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      UnderlineExtension,
+      HighlightExtension.configure({ multicolor: true }),
+      TaskListExtension,
+      TaskItemExtension.configure({ nested: true }),
+      ImageExtension.configure({ inline: false, allowBase64: true }),
+    ],
+    content: content || '<p></p>',
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      setContent(html);
+      setSaveState('typing');
+    },
+  });
 
   // Seed state when note prop changes
   useEffect(() => {
@@ -81,8 +86,9 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
       setIsStarred(note.is_starred);
       setWordCount(note.word_count);
       setLastSavedTime(new Date(note.updated_at || Date.now()));
-      setHistoryStack([note.content]);
-      setHistoryIdx(0);
+      if (editor && note.content) {
+        editor.commands.setContent(note.content);
+      }
     } else {
       setTitle('');
       setContent('');
@@ -91,16 +97,18 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
       setIsStarred(false);
       setWordCount(0);
       setLastSavedTime(null);
-      setHistoryStack(['']);
-      setHistoryIdx(0);
+      if (editor) {
+        editor.commands.setContent('<p></p>');
+      }
     }
     setSaveState('idle');
-  }, [note?.id]);
+  }, [note?.id, editor]);
 
   // Word count & relative save time ticker
   useEffect(() => {
-    setWordCount(content.split(/\s+/).filter(Boolean).length);
-  }, [content]);
+    const text = editor ? editor.getText() : content;
+    setWordCount(text.split(/\s+/).filter(Boolean).length);
+  }, [content, editor]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -116,45 +124,16 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
     return () => clearInterval(timer);
   }, [lastSavedTime]);
 
-  // Content update with History Push
-  const updateContent = useCallback((newContent: string) => {
-    setContent(newContent);
-    setSaveState('typing');
-
-    setHistoryStack((prev) => {
-      const current = prev.slice(0, historyIdx + 1);
-      if (current[current.length - 1] === newContent) return prev;
-      const next = [...current, newContent].slice(-50);
-      setHistoryIdx(next.length - 1);
-      return next;
-    });
-  }, [historyIdx]);
-
-  // Undo & Redo Handlers
-  const handleUndo = useCallback(() => {
-    if (historyIdx > 0) {
-      const prevIdx = historyIdx - 1;
-      setHistoryIdx(prevIdx);
-      setContent(historyStack[prevIdx]);
-      setSaveState('typing');
-    }
-  }, [historyIdx, historyStack]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIdx < historyStack.length - 1) {
-      const nextIdx = historyIdx + 1;
-      setHistoryIdx(nextIdx);
-      setContent(historyStack[nextIdx]);
-      setSaveState('typing');
-    }
-  }, [historyIdx, historyStack]);
-
   // Clean raw Base64 strings from existing note text
   const handleCleanRawBase64 = () => {
     const cleaned = content
-      .replace(/!\[(.*?)\]\(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+\)/gi, '🎨 [Handwritten Sketch Attachment]')
+      .replace(/!\[(.*?)\]\(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+\)/gi, '')
       .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/gi, '');
-    updateContent(cleaned);
+    setContent(cleaned);
+    if (editor) {
+      editor.commands.setContent(cleaned);
+    }
+    setSaveState('typing');
   };
 
   // Handle Save
@@ -162,11 +141,13 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
     if (!title.trim()) return;
     setSaveState('saving');
 
+    const finalContent = editor ? editor.getHTML() : content;
+
     let updated: Note | null = null;
     if (note) {
-      updated = await notesService.update(note.id, { title, content, folder, tags, is_starred: isStarred });
+      updated = await notesService.update(note.id, { title, content: finalContent, folder, tags, is_starred: isStarred });
     } else if (userId) {
-      updated = await notesService.create(userId, { title, content, folder, tags, is_starred: isStarred });
+      updated = await notesService.create(userId, { title, content: finalContent, folder, tags, is_starred: isStarred });
     }
 
     if (updated) {
@@ -177,7 +158,7 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
     } else {
       setSaveState('idle');
     }
-  }, [note, title, content, folder, tags, isStarred, userId, onSave]);
+  }, [note, title, content, folder, tags, isStarred, userId, onSave, editor]);
 
   // Debounced auto-save
   useEffect(() => {
@@ -198,10 +179,10 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `Enhance and structure the following study note using clean Markdown. Keep original thoughts, then add:
-1. "## Key Takeaways" (bullet points)
-2. "## Summary" (2-3 sentences)
-3. "## Study Tips"
+          message: `Enhance and structure the following study note using clean HTML/Markdown. Keep original thoughts, then add:
+1. "<h2>Key Takeaways</h2>" (bullet points)
+2. "<h2>Summary</h2>" (2-3 sentences)
+3. "<h2>Study Tips</h2>"
 
 Title: ${title}
 Content: ${content}`,
@@ -214,7 +195,8 @@ Content: ${content}`,
         const data = await res.json();
         const enhanced = data.content || '';
         if (enhanced) {
-          updateContent(enhanced);
+          setContent(enhanced);
+          if (editor) editor.commands.setContent(enhanced);
           await notesService.update(note.id, { content: enhanced, is_ai_enhanced: true });
         }
       }
@@ -227,7 +209,8 @@ Content: ${content}`,
 
   // Export to Markdown (.md)
   const handleExportMarkdown = () => {
-    const markdownText = `# ${title || 'Untitled Note'}\n\n**Folder:** ${folder}\n**Tags:** ${tags.join(', ')}\n\n---\n\n${content}`;
+    const textContent = editor ? editor.getText() : content;
+    const markdownText = `# ${title || 'Untitled Note'}\n\n**Folder:** ${folder}\n**Tags:** ${tags.join(', ')}\n\n---\n\n${textContent}`;
     const blob = new Blob([markdownText], { type: 'text/markdown;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -237,102 +220,32 @@ Content: ${content}`,
     URL.revokeObjectURL(url);
   };
 
-  // Insert Rich Formatting Syntax
-  const insertFormat = (before: string, after: string = '') => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = content.substring(start, end) || 'text';
-    const replacement = before + selected + after;
-    const newContent = content.slice(0, start) + replacement + content.slice(end);
-
-    updateContent(newContent);
-
-    setTimeout(() => {
-      el.focus();
-      el.setSelectionRange(start + before.length, start + before.length + selected.length);
-    }, 0);
-  };
-
   // Insert Sketch Drawing Image Data URL
   const handleSaveDrawing = (dataUrl: string) => {
-    const imageMarkdown = `\n![Handwritten Sketch](${dataUrl})\n`;
-    const el = textareaRef.current;
-    if (el) {
-      const start = el.selectionStart;
-      const newContent = content.slice(0, start) + imageMarkdown + content.slice(start);
-      updateContent(newContent);
+    if (editor) {
+      editor.chain().focus().setImage({ src: dataUrl }).run();
     } else {
-      updateContent(content + imageMarkdown);
+      const imgTag = `<p><img src="${dataUrl}" alt="Handwritten Sketch" /></p>`;
+      setContent((prev) => prev + imgTag);
     }
+    setSaveState('typing');
   };
 
-  // Handle Slash Command Typing
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    const cursor = e.target.selectionStart;
-    updateContent(val);
+  const SLASH_COMMANDS: SlashCommand[] = [
+    { id: 'h1',        label: 'Heading 1',  sub: 'Big section heading',    icon: Hash,        action: (ed) => ed.chain().focus().toggleHeading({ level: 1 }).run() },
+    { id: 'h2',        label: 'Heading 2',  sub: 'Medium sub-heading',     icon: Hash,        action: (ed) => ed.chain().focus().toggleHeading({ level: 2 }).run() },
+    { id: 'checklist', label: 'Checklist',  sub: 'Interactive task list',  icon: CheckSquare, action: (ed) => ed.chain().focus().toggleTaskList().run() },
+    { id: 'code',      label: 'Code Block', sub: 'Syntax highlighted code',icon: Code2,      action: (ed) => ed.chain().focus().toggleCodeBlock().run() },
+    { id: 'quote',     label: 'Quote',      sub: 'Blockquote text',        icon: Quote,       action: (ed) => ed.chain().focus().toggleBlockquote().run() },
+    { id: 'sketch',    label: 'Sketch & Draw', sub: 'Draw freehand diagrams', icon: PenTool, action: () => setShowSketchModal(true), isAction: 'draw' },
+  ];
 
-    // Check if cursor is right after slash '/'
-    const textBeforeCursor = val.slice(0, cursor);
-    const lastSlashIdx = textBeforeCursor.lastIndexOf('/');
-
-    if (lastSlashIdx !== -1 && (lastSlashIdx === 0 || val[lastSlashIdx - 1] === '\n' || val[lastSlashIdx - 1] === ' ')) {
-      const filter = textBeforeCursor.slice(lastSlashIdx + 1);
-      if (!filter.includes(' ')) {
-        setSlashFilter(filter.toLowerCase());
-        setSlashOpen(true);
-        setSlashIndex(0);
-        return;
-      }
-    }
-    setSlashOpen(false);
-  };
-
-  // Handle Keyboard Shortcuts (Ctrl+Z Undo / Ctrl+Y Redo)
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      if (e.shiftKey) {
-        e.preventDefault();
-        handleRedo();
-      } else {
-        e.preventDefault();
-        handleUndo();
-      }
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-      e.preventDefault();
-      handleRedo();
-    }
-  };
-
-  // Handle Slash Command Selection
   const applySlashCommand = (cmd: SlashCommand) => {
-    if (cmd.isAction === 'draw') {
-      setSlashOpen(false);
-      setShowSketchModal(true);
-      return;
+    if (editor) {
+      cmd.action(editor);
     }
-
-    const el = textareaRef.current;
-    if (!el) return;
-
-    const cursor = el.selectionStart;
-    const textBeforeCursor = content.slice(0, cursor);
-    const lastSlashIdx = textBeforeCursor.lastIndexOf('/');
-
-    const newContent = content.slice(0, lastSlashIdx) + cmd.insert + content.slice(cursor);
-    updateContent(newContent);
     setSlashOpen(false);
-
-    setTimeout(() => {
-      el.focus();
-    }, 0);
   };
-
-  const filteredSlashCmds = SLASH_COMMANDS.filter((c) =>
-    c.label.toLowerCase().includes(slashFilter) || c.id.includes(slashFilter)
-  );
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -364,16 +277,16 @@ Content: ${content}`,
         <div className="flex items-center gap-1 flex-wrap">
           {/* Undo & Redo */}
           <button
-            onClick={handleUndo}
-            disabled={historyIdx <= 0}
+            onClick={() => editor?.chain().focus().undo().run()}
+            disabled={!editor?.can().undo()}
             title="Undo (Ctrl+Z)"
             className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs disabled:opacity-30"
           >
             <Undo className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={handleRedo}
-            disabled={historyIdx >= historyStack.length - 1}
+            onClick={() => editor?.chain().focus().redo().run()}
+            disabled={!editor?.can().redo()}
             title="Redo (Ctrl+Y)"
             className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs disabled:opacity-30"
           >
@@ -382,35 +295,113 @@ Content: ${content}`,
 
           <div className="w-px h-4 bg-white/10 mx-1" />
 
-          {/* Formatting */}
-          <button onClick={() => insertFormat('**', '**')} title="Bold" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+          {/* Bold */}
+          <button
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+            title="Bold"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('bold') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Bold className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('*', '*')} title="Italic" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Italic */}
+          <button
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+            title="Italic"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('italic') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Italic className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('<u>', '</u>')} title="Underline" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Underline */}
+          <button
+            onClick={() => editor?.chain().focus().toggleUnderline().run()}
+            title="Underline"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('underline') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Underline className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('<mark>', '</mark>')} title="Highlight" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Highlight / Marker */}
+          <button
+            onClick={() => editor?.chain().focus().toggleHighlight({ color: '#fbbf24' }).run()}
+            title="Highlight Marker"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('highlight') ? "bg-amber-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Highlighter className="w-3.5 h-3.5" />
           </button>
 
           <div className="w-px h-4 bg-white/10 mx-1" />
 
-          <button onClick={() => insertFormat('# ')} title="Heading" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+          {/* Heading 1 */}
+          <button
+            onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+            title="Heading 1"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('heading', { level: 1 }) ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Hash className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('- ')} title="Bullet List" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Bullet List */}
+          <button
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+            title="Bullet List"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('bulletList') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <List className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('- [ ] ')} title="Checklist" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Checklist */}
+          <button
+            onClick={() => editor?.chain().focus().toggleTaskList().run()}
+            title="Checklist"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('taskList') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <CheckSquare className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('> ')} title="Quote" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Blockquote */}
+          <button
+            onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+            title="Blockquote"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('blockquote') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Quote className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => insertFormat('```javascript\n', '\n```')} title="Code Block" className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-all text-xs">
+
+          {/* Code Block */}
+          <button
+            onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+            title="Code Block"
+            className={cn(
+              "w-7 h-7 flex items-center justify-center rounded-lg text-xs transition-all",
+              editor?.isActive('codeBlock') ? "bg-brand-500 text-white shadow-sm" : "text-stone-400 hover:text-white hover:bg-white/10"
+            )}
+          >
             <Code2 className="w-3.5 h-3.5" />
           </button>
 
@@ -566,23 +557,16 @@ Content: ${content}`,
         </div>
       </div>
 
-      {/* ── EDITOR & PREVIEW PANELS ────────────────────────────────────── */}
+      {/* ── EDITOR & PREVIEW PANELS (Tiptap WYSIWYG Editor) ──────────────── */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Editor Textarea */}
+        {/* Editor View */}
         {(viewMode === 'edit' || viewMode === 'split') && (
-          <div className="flex-1 flex flex-col min-w-0 h-full relative">
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Start writing your note... Type '/' for Notion slash commands"
-              className="flex-1 bg-transparent text-sm text-stone-200 placeholder-stone-600 resize-none border-0 focus:ring-0 outline-none px-6 py-4 leading-relaxed font-mono no-scrollbar"
-            />
+          <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-y-auto px-6 py-4">
+            <EditorContent editor={editor} />
 
             {/* NOTION-STYLE SLASH COMMANDS MENU */}
             <AnimatePresence>
-              {slashOpen && filteredSlashCmds.length > 0 && (
+              {slashOpen && (
                 <motion.div
                   initial={{ opacity: 0, y: 6, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -594,16 +578,13 @@ Content: ${content}`,
                   </div>
 
                   <div className="max-h-60 overflow-y-auto no-scrollbar py-1">
-                    {filteredSlashCmds.map((cmd, idx) => {
+                    {SLASH_COMMANDS.map((cmd) => {
                       const Icon = cmd.icon;
                       return (
                         <button
                           key={cmd.id}
                           onClick={() => applySlashCommand(cmd)}
-                          className={cn(
-                            'w-full flex items-center gap-3 px-3 py-2 text-left transition-colors',
-                            idx === slashIndex ? 'bg-brand-500/20 text-white' : 'hover:bg-white/5 text-stone-300'
-                          )}
+                          className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/5 text-stone-300 transition-colors"
                         >
                           <div className="w-7 h-7 rounded-lg bg-surface-800 flex items-center justify-center flex-shrink-0 text-brand-400 border border-white/5">
                             <Icon className="w-3.5 h-3.5" />
@@ -627,12 +608,13 @@ Content: ${content}`,
           <div className="w-px bg-white/10 h-full flex-shrink-0" />
         )}
 
-        {/* Rendered Markdown Preview Panel */}
+        {/* Rendered Markdown / HTML Preview Panel */}
         {(viewMode === 'preview' || viewMode === 'split') && (
           <div className="flex-1 min-w-0 h-full overflow-y-auto px-6 py-4 bg-surface-950/40 no-scrollbar">
-            <div className="prose prose-invert max-w-none space-y-3 text-sm text-stone-200 leading-relaxed font-sans">
-              {renderMarkdownPreview(content)}
-            </div>
+            <div
+              className="prose prose-invert max-w-none space-y-3 text-sm text-stone-200 leading-relaxed font-sans"
+              dangerouslySetInnerHTML={{ __html: content || '<p class="text-stone-500 italic">Nothing to preview yet...</p>' }}
+            />
           </div>
         )}
       </div>
@@ -645,147 +627,4 @@ Content: ${content}`,
       />
     </div>
   );
-}
-
-// ─── Robust Markdown & Diagram Preview Renderer ──────────────────────────────
-function renderMarkdownPreview(rawContent: string) {
-  if (!rawContent || !rawContent.trim()) {
-    return <p className="text-stone-500 italic">Nothing to preview yet...</p>;
-  }
-
-  // Pre-process content: clean up any whitespace or split newlines inside data:image URLs
-  const sanitized = rawContent.replace(
-    /!\[(.*?)\]\((data:image\/[^;]+;base64,[\s\S]*?)\)/g,
-    (_, alt, url) => `![${alt}](${url.replace(/[\r\n\s]+/g, '')})`
-  );
-
-  const lines = sanitized.split('\n');
-  const elements: React.ReactNode[] = [];
-  let inCodeBlock = false;
-  let codeBuffer: string[] = [];
-  let codeLang = '';
-
-  lines.forEach((line, idx) => {
-    const trimmed = line.trim();
-
-    // Code blocks ```
-    if (trimmed.startsWith('```')) {
-      if (inCodeBlock) {
-        elements.push(
-          <div key={`code-${idx}`} className="my-3 rounded-xl overflow-hidden border border-white/10 bg-[#161514] shadow-inner">
-            <div className="flex items-center justify-between px-4 py-2 bg-[#211f1d] border-b border-white/10">
-              <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider">{codeLang || 'code'}</span>
-            </div>
-            <pre className="p-4 overflow-x-auto text-sm text-stone-200 font-mono whitespace-pre">
-              <code>{codeBuffer.join('\n')}</code>
-            </pre>
-          </div>
-        );
-        codeBuffer = [];
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-        codeLang = trimmed.slice(3).trim();
-      }
-      return;
-    }
-
-    if (inCodeBlock) {
-      codeBuffer.push(line);
-      return;
-    }
-
-    if (!trimmed) {
-      elements.push(<div key={`gap-${idx}`} className="h-2" />);
-      return;
-    }
-
-    // Image check: ![alt](url)
-    const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/) || trimmed.match(/!\[(.*?)\]\((data:image\/[^\)]+|https?:\/\/[^\)]+)\)/);
-    if (imgMatch) {
-      const src = imgMatch[2].replace(/[\r\n\s]+/g, '');
-      const alt = imgMatch[1] || 'Diagram Sketch';
-      elements.push(
-        <div key={`img-${idx}`} className="my-4 rounded-2xl overflow-hidden border border-white/10 bg-surface-900/80 p-3 text-center group relative shadow-lg">
-          <img
-            src={src}
-            alt={alt}
-            className="max-h-96 w-auto mx-auto rounded-xl object-contain shadow-md"
-          />
-          <span className="text-2xs text-brand-400 mt-2 block font-mono font-medium">🎨 {alt}</span>
-        </div>
-      );
-      return;
-    }
-
-    // Filter out raw orphan base64 lines if any somehow leak
-    if (/^(iVBORw0KGgo|data:image\/|[A-Za-z0-9+/=]{40,})/.test(trimmed)) {
-      return;
-    }
-
-    // Headings
-    if (trimmed.startsWith('# ')) {
-      elements.push(<h1 key={`h1-${idx}`} className="text-2xl font-bold text-white border-b border-white/10 pb-2 mt-4">{trimmed.slice(2)}</h1>);
-      return;
-    }
-    if (trimmed.startsWith('## ')) {
-      elements.push(<h2 key={`h2-${idx}`} className="text-lg font-bold text-white mt-3">{trimmed.slice(3)}</h2>);
-      return;
-    }
-    if (trimmed.startsWith('### ')) {
-      elements.push(<h3 key={`h3-${idx}`} className="text-base font-bold text-stone-100 mt-2">{trimmed.slice(4)}</h3>);
-      return;
-    }
-
-    // Checklists
-    if (trimmed.startsWith('- [ ] ')) {
-      elements.push(
-        <div key={`chk-${idx}`} className="flex items-center gap-2 py-0.5">
-          <input type="checkbox" className="rounded bg-surface-800 border-white/20 text-brand-500 focus:ring-0" />
-          <span>{trimmed.slice(6)}</span>
-        </div>
-      );
-      return;
-    }
-    if (trimmed.startsWith('- [x] ')) {
-      elements.push(
-        <div key={`chkx-${idx}`} className="flex items-center gap-2 py-0.5 text-stone-500 line-through">
-          <input type="checkbox" checked readOnly className="rounded bg-brand-500/40 border-brand-500 text-brand-500" />
-          <span>{trimmed.slice(6)}</span>
-        </div>
-      );
-      return;
-    }
-
-    // Bullet lists
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      elements.push(
-        <li key={`li-${idx}`} className="ml-4 list-disc text-stone-200">
-          {trimmed.slice(2)}
-        </li>
-      );
-      return;
-    }
-
-    // Blockquotes
-    if (trimmed.startsWith('> ')) {
-      elements.push(
-        <blockquote key={`bq-${idx}`} className="border-l-2 border-brand-500 pl-3 italic text-stone-300 bg-brand-500/10 py-1.5 rounded-r-lg my-1.5">
-          {trimmed.slice(2)}
-        </blockquote>
-      );
-      return;
-    }
-
-    // Dividers
-    if (trimmed === '---' || trimmed === '***') {
-      elements.push(<hr key={`hr-${idx}`} className="border-white/10 my-4" />);
-      return;
-    }
-
-    // Regular paragraph
-    elements.push(<p key={`p-${idx}`} className="text-stone-200">{line}</p>);
-  });
-
-  return elements;
 }

@@ -263,3 +263,106 @@ html[data-compact="true"] {
     backface-visibility: hidden;
   }
 }
+
+/* ─── Tiptap ProseMirror WYSIWYG Editor Styles ────────────────────────── */
+.ProseMirror {
+  outline: none !important;
+  min-height: 350px;
+  color: var(--text-primary);
+}
+
+.ProseMirror u {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ProseMirror mark {
+  background-color: rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.ProseMirror h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-top: 1.2rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.25rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.35rem 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  accent-color: var(--brand-primary);
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid var(--brand-primary);
+  padding-left: 1rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  background: rgba(218, 119, 86, 0.08);
+  padding: 0.5rem 1rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+  margin: 0.75rem 0;
+}
+
+.ProseMirror pre {
+  background: #161514;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  color: #f5f0eb;
+  font-family: monospace;
+}
+
+.ProseMirror img {
+  max-height: 400px;
+  width: auto;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0.75rem auto;
+}
+
