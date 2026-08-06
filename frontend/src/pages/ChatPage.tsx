@@ -19,7 +19,16 @@ const SUBJECT_OPTIONS: { id: SubjectFocus; label: string; icon: React.ElementTyp
   { id: 'exam_prep',    label: 'Exam Coach',            icon: Target,     color: 'text-rose-400'    },
 ];
 
-// Quick prompt chips shown in the empty state (like the reference screenshot)
+// Claude-style Quick Action Mode Chips (matching reference screenshot)
+const ACTION_CHIPS = [
+  { label: 'Write',           icon: '✏️', prompt: 'Help me write and structure a clear essay outline or summary on my topic.' },
+  { label: 'Learn',           icon: '🎓', prompt: 'Explain a key academic concept step-by-step with real-world analogies.' },
+  { label: 'Code',            icon: '</>', prompt: 'Write and explain clean code snippets with Big-O time and space complexity.' },
+  { label: 'Life stuff',      icon: '☕', prompt: 'Give me practical productivity tips, exam strategies, and an active study routine.' },
+  { label: 'StudyOS choice',  icon: '💡', prompt: 'Quiz me on a high-yield study topic to test my understanding.' },
+];
+
+// Quick prompt chips shown in the empty state
 const QUICK_PROMPTS = [
   { label: 'Explain a concept', prompt: 'Explain a concept to me step-by-step with simple analogies.' },
   { label: 'Help me study',     prompt: 'Create a focused study plan for my upcoming exam.' },
@@ -29,7 +38,11 @@ const QUICK_PROMPTS = [
 ];
 
 export function ChatPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const rawName = profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Student';
+  const displayName = rawName.toUpperCase();
+  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+
   const [sessions,           setSessions]           = useState<ChatSession[]>([]);
   const [activeSessionId,    setActiveSessionId]    = useState<string | null>(null);
   const [messages,           setMessages]           = useState<ChatMessageType[]>([]);
@@ -323,21 +336,27 @@ export function ChatPage() {
                     <Sparkles className="w-10 h-10 text-white" />
                   </motion.div>
 
-                  {/* Heading + subtitle */}
+                  {/* Heading + subtitle (Claude reference layout) */}
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
                   >
-                    <h2 className="text-2xl font-bold text-white mb-2">
-                      What would you like to learn today?
-                    </h2>
-                    <p className="text-slate-400 text-sm max-w-sm mx-auto">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <span className="text-xl text-brand-400">✳</span>
+                      <h2 className="text-2xl font-serif text-stone-200 font-normal">
+                        Happy {dayName},
+                      </h2>
+                    </div>
+                    <h1 className="text-3xl font-display font-extrabold text-white tracking-widest uppercase mb-3">
+                      {displayName}
+                    </h1>
+                    <p className="text-stone-400 text-sm max-w-sm mx-auto">
                       Ask me anything — step-by-step explanations, code examples, math solutions, and study strategies.
                     </p>
                   </motion.div>
 
-                  {/* ── Quick prompt pills (horizontal row, reference style) ── */}
+                  {/* ── Quick prompt pills (horizontal row) ── */}
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -348,7 +367,7 @@ export function ChatPage() {
                       <button
                         key={qp.label}
                         onClick={() => handleSendMessage(qp.prompt)}
-                        className="px-4 py-2 rounded-full text-xs font-medium border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:border-brand-500/40 hover:bg-brand-500/10 transition-all"
+                        className="px-4 py-2 rounded-full text-xs font-medium border border-white/10 bg-white/5 text-stone-300 hover:text-white hover:border-brand-500/40 hover:bg-brand-500/10 transition-all"
                       >
                         {qp.label}
                       </button>
@@ -434,7 +453,7 @@ export function ChatPage() {
                     'w-8 h-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0',
                     attachedFile
                       ? 'text-brand-400 bg-brand-500/15'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                      : 'text-stone-500 hover:text-stone-300 hover:bg-white/5'
                   )}
                 >
                   <Paperclip className="w-4 h-4" />
@@ -452,7 +471,7 @@ export function ChatPage() {
                   }}
                   placeholder={attachedFile ? 'Ask something about this file...' : 'Ask anything...'}
                   rows={1}
-                  className="flex-1 bg-transparent border-0 outline-none focus:outline-none focus:ring-0 focus:border-0 text-sm text-white placeholder-slate-500 resize-none max-h-32 no-scrollbar leading-relaxed"
+                  className="flex-1 bg-transparent border-0 outline-none focus:outline-none focus:ring-0 focus:border-0 text-sm text-white placeholder-stone-500 resize-none max-h-32 no-scrollbar leading-relaxed"
                 />
 
                 <button
@@ -462,7 +481,7 @@ export function ChatPage() {
                     'w-9 h-9 rounded-xl flex items-center justify-center transition-all flex-shrink-0',
                     (inputPrompt.trim() || attachedFile) && !isGenerating
                       ? 'bg-brand-gradient text-white shadow-glow-sm hover:scale-105'
-                      : 'bg-white/5 text-slate-600 cursor-not-allowed'
+                      : 'bg-white/5 text-stone-600 cursor-not-allowed'
                   )}
                 >
                   {isGenerating
@@ -472,7 +491,21 @@ export function ChatPage() {
                 </button>
               </div>
 
-              <p className="text-center text-2xs text-slate-600 mt-2">
+              {/* Action Mode Chips (Claude UI Style) */}
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                {ACTION_CHIPS.map((chip) => (
+                  <button
+                    key={chip.label}
+                    onClick={() => handleSendMessage(chip.prompt)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-800/80 hover:bg-brand-500/20 border border-white/5 hover:border-brand-500/30 text-stone-300 hover:text-white text-xs font-medium transition-all shadow-sm group"
+                  >
+                    <span className="text-xs">{chip.icon}</span>
+                    <span>{chip.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-center text-2xs text-stone-500 mt-2">
                 StudyOS AI · Powered by Groq · Supports images &amp; PDFs
               </p>
             </div>

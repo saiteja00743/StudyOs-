@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Brain, User, Copy, Check, Volume2, RotateCcw, Sparkles } from 'lucide-react';
+import { Brain, User, Copy, Check, Volume2, RotateCcw, Sparkles, Bookmark, FileText } from 'lucide-react';
 import { ChatMessage as ChatMessageType } from '@/types/chat';
+import { useAuth } from '@/hooks/useAuth';
+import { notesService } from '@/services/notesService';
 import { cn } from '@/utils/cn';
 
 interface ChatMessageProps {
@@ -226,14 +228,29 @@ function renderInline(text: string): React.ReactNode {
 
 // ─── ChatMessage Component ───────────────────────────────────────────────────
 export function ChatMessage({ message, onRegenerate }: ChatMessageProps) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [savedNote, setSavedNote] = useState(false);
   const isUser = message.role === 'user';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveToNotes = async () => {
+    if (!user?.id) return;
+    const titleSnippet = message.content.replace(/[#*`_~\[\]]/g, '').slice(0, 35).trim() || 'AI Chat Response';
+    await notesService.create(user.id, {
+      title: `AI Note: ${titleSnippet}`,
+      content: message.content,
+      folder: 'AI Study Notes',
+      tags: ['ai-generated', 'chat-export'],
+    });
+    setSavedNote(true);
+    setTimeout(() => setSavedNote(false), 2500);
   };
 
   const handleSpeak = () => {
@@ -321,6 +338,15 @@ export function ChatMessage({ message, onRegenerate }: ChatMessageProps) {
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied!' : 'Copy'}
+            </button>
+
+            <button
+              onClick={handleSaveToNotes}
+              className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-200 transition-colors"
+              title="Save response to StudyOS Notes"
+            >
+              {savedNote ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Bookmark className="w-3.5 h-3.5 text-brand-400" />}
+              {savedNote ? 'Saved to Notes!' : 'Save Note'}
             </button>
 
             <button
