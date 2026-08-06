@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';  
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -31,6 +32,30 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  useEffect(() => {
+    const theme = localStorage.getItem('studyos_theme') || 'dark';
+    const accent = localStorage.getItem('studyos_accent') || 'violet';
+    const reducedMotion = localStorage.getItem('studyos_reduced_motion') === 'true';
+    const compactMode = localStorage.getItem('studyos_compact_mode') === 'true';
+
+    let activeTheme = theme;
+    if (theme === 'system') {
+      activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    document.documentElement.setAttribute('data-theme', activeTheme);
+    document.documentElement.setAttribute('data-accent', accent);
+    document.documentElement.setAttribute('data-reduced-motion', String(reducedMotion));
+    document.documentElement.setAttribute('data-compact', String(compactMode));
+
+    if (activeTheme === 'light') {
+      document.documentElement.classList.add('light-mode');
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

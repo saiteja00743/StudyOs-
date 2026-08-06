@@ -102,9 +102,24 @@ export function SettingsPage() {
     localStorage.setItem('studyos_accent', accent);
     localStorage.setItem('studyos_reduced_motion', String(reducedMotion));
     localStorage.setItem('studyos_compact_mode', String(compactMode));
-    document.documentElement.setAttribute('data-theme', theme);
+
+    let activeTheme = theme;
+    if (theme === 'system') {
+      activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    document.documentElement.setAttribute('data-theme', activeTheme);
     document.documentElement.setAttribute('data-accent', accent);
+    document.documentElement.setAttribute('data-reduced-motion', String(reducedMotion));
     document.documentElement.setAttribute('data-compact', String(compactMode));
+
+    if (activeTheme === 'light') {
+      document.documentElement.classList.add('light-mode');
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+      document.documentElement.classList.add('dark');
+    }
   }, [theme, accent, reducedMotion, compactMode]);
 
   // ── Notifications ────────────────────────────────────────────

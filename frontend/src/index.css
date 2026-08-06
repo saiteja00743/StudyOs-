@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── CSS Custom Properties (Claude Warm Dark Theme) ───────────────────────── */
+/* ─── CSS Custom Properties (Claude Warm Dark Theme Default) ───────────────── */
 :root {
   --brand-primary: #da7756;
   --brand-secondary: #e0966d;
@@ -20,18 +20,85 @@
   --glow-accent: rgba(224, 150, 109, 0.25);
 }
 
-/* Dynamic Accent Colors */
-html[data-accent="terracotta"] { --brand-primary: #da7756; --brand-secondary: #e0966d; }
-html[data-accent="cyan"] { --brand-primary: #06b6d4; --brand-secondary: #38bdf8; }
-html[data-accent="emerald"] { --brand-primary: #10b981; --brand-secondary: #34d399; }
-html[data-accent="rose"] { --brand-primary: #f43f5e; --brand-secondary: #fb7185; }
-html[data-accent="amber"] { --brand-primary: #f59e0b; --brand-secondary: #fbbf24; }
+/* ─── Light Mode Overrides (Full Light Theme Support) ─────────────────────── */
+html[data-theme="light"],
+html.light-mode {
+  color-scheme: light;
+  --bg-base: #faf7f4;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f3efe6;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-default: rgba(0, 0, 0, 0.14);
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-muted: #78716c;
+}
 
-/* Light Theme support */
-html[data-theme="light"] body {
-  background-color: #faf7f4;
+html[data-theme="light"] body,
+html.light-mode body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  background-image:
+    radial-gradient(at 30% 10%, rgba(218, 119, 86, 0.04) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(224, 150, 109, 0.03) 0px, transparent 50%);
+}
+
+html[data-theme="light"] select option,
+html.light-mode select option {
+  background-color: #ffffff;
   color: #1c1917;
 }
+
+html[data-theme="light"] .glass,
+html.light-mode .glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+html[data-theme="light"] .glass-strong,
+html.light-mode .glass-strong {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.07);
+}
+
+/* ─── Accent Color Swatches ───────────────────────────────────────────────── */
+html[data-accent="violet"],
+html[data-accent="terracotta"] {
+  --brand-primary: #da7756;
+  --brand-secondary: #e0966d;
+}
+html[data-accent="cyan"] {
+  --brand-primary: #06b6d4;
+  --brand-secondary: #38bdf8;
+}
+html[data-accent="emerald"] {
+  --brand-primary: #10b981;
+  --brand-secondary: #34d399;
+}
+html[data-accent="rose"] {
+  --brand-primary: #f43f5e;
+  --brand-secondary: #fb7185;
+}
+html[data-accent="amber"] {
+  --brand-primary: #f59e0b;
+  --brand-secondary: #fbbf24;
+}
+
+/* ─── Accessibility & Density ────────────────────────────────────────────── */
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
 html[data-compact="true"] {
   font-size: 14px;
 }
@@ -109,14 +176,14 @@ html[data-compact="true"] {
 
   /* Gradient text */
   .gradient-text {
-    background: linear-gradient(135deg, #da7756 0%, #e0966d 50%, #f5f0eb 100%);
+    background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 50%, #f5f0eb 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .gradient-text-warm {
-    background: linear-gradient(135deg, #da7756 0%, #f59e0b 50%, #f0cbb5 100%);
+    background: linear-gradient(135deg, var(--brand-primary) 0%, #f59e0b 50%, #f0cbb5 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -127,7 +194,7 @@ html[data-compact="true"] {
     border: 1px solid transparent;
     background:
       linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box,
-      linear-gradient(135deg, #da7756, #e0966d) border-box;
+      linear-gradient(135deg, var(--brand-primary), var(--brand-secondary)) border-box;
   }
 
   /* Dot grid pattern */
