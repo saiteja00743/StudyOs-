@@ -8,40 +8,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Brand palette — deep space + electric violet
+        // Claude Warm Terracotta Brand Palette
         brand: {
-          50:  '#f0edff',
-          100: '#e2dbff',
-          200: '#c5b7ff',
-          300: '#a793ff',
-          400: '#8a6fff',
-          500: '#6d4bff', // Primary
-          600: '#5a3ce6',
-          700: '#472dcc',
-          800: '#341eb3',
-          900: '#210f99',
+          50:  '#fdf8f5',
+          100: '#f9eee8',
+          200: '#f2dacd',
+          300: '#e8beab',
+          400: '#df9c83',
+          500: '#da7756', // Primary Claude Terracotta
+          600: '#c55d3b',
+          700: '#a4472a',
+          800: '#873a24',
+          900: '#6f3221',
         },
-        // Accent — electric indigo/blue
+        // Warm Accent — Sand/Amber
         accent: {
-          DEFAULT: '#818cf8',
-          light:   '#c7d2fe',
-          dark:    '#4f46e5',
+          DEFAULT: '#e0966d',
+          light:   '#f0cbb5',
+          dark:    '#b86940',
         },
-        // Surface colors for dark mode
+        // Warm Charcoal Surface colors (Claude Dark Theme)
         surface: {
-          50:  '#f8f9ff',
-          100: '#eef0fa',
-          200: '#dde1f5',
-          800: '#1a1d2e',
-          850: '#141627',
-          900: '#0e1020',
-          950: '#080a16',
+          50:  '#faf8f5',
+          100: '#f3efe6',
+          200: '#e5decb',
+          700: '#383632',
+          800: '#2e2c29', // Card/Input elevated
+          850: '#262522', // Card base
+          900: '#1f1e1d', // Sidebar & containers
+          950: '#171716', // Main body background
         },
         // Semantic
-        success: { DEFAULT: '#22c55e', light: '#86efac', dark: '#15803d' },
-        warning: { DEFAULT: '#f59e0b', light: '#fcd34d', dark: '#b45309' },
-        danger:  { DEFAULT: '#ef4444', light: '#fca5a5', dark: '#b91c1c' },
-        info:    { DEFAULT: '#3b82f6', light: '#93c5fd', dark: '#1d4ed8' },
+        success: { DEFAULT: '#34d399', light: '#a7f3d0', dark: '#059669' },
+        warning: { DEFAULT: '#fbbf24', light: '#fde68a', dark: '#d97706' },
+        danger:  { DEFAULT: '#f87171', light: '#fca5a5', dark: '#dc2626' },
+        info:    { DEFAULT: '#60a5fa', light: '#bfdbfe', dark: '#2563eb' },
       },
       fontFamily: {
         sans:  ['Inter', 'system-ui', 'sans-serif'],
@@ -56,23 +57,23 @@ export default {
         '5xl': '2.5rem',
       },
       boxShadow: {
-        'glow-sm':  '0 0 10px rgba(109, 75, 255, 0.25)',
-        'glow-md':  '0 0 24px rgba(109, 75, 255, 0.4)',
-        'glow':     '0 0 20px rgba(109, 75, 255, 0.35)',
-        'glow-lg':  '0 0 40px rgba(109, 75, 255, 0.45)',
-        'glow-xl':  '0 0 80px rgba(109, 75, 255, 0.3)',
-        'card':     '0 4px 24px rgba(0, 0, 0, 0.3)',
-        'card-hover': '0 8px 40px rgba(0, 0, 0, 0.5)',
-        'glass':    '0 8px 32px rgba(0, 0, 0, 0.37)',
+        'glow-sm':  '0 0 12px rgba(218, 119, 86, 0.25)',
+        'glow-md':  '0 0 24px rgba(218, 119, 86, 0.35)',
+        'glow':     '0 0 20px rgba(218, 119, 86, 0.3)',
+        'glow-lg':  '0 0 40px rgba(218, 119, 86, 0.4)',
+        'glow-xl':  '0 0 80px rgba(218, 119, 86, 0.25)',
+        'card':     '0 4px 24px rgba(0, 0, 0, 0.4)',
+        'card-hover': '0 8px 40px rgba(0, 0, 0, 0.6)',
+        'glass':    '0 8px 32px rgba(0, 0, 0, 0.45)',
       },
       backgroundImage: {
         'gradient-radial':  'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic':   'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
-        'hero-gradient':    'linear-gradient(135deg, #080a16 0%, #1a1d2e 40%, #0e1020 100%)',
-        'brand-gradient':   'linear-gradient(135deg, #6d4bff 0%, #818cf8 100%)',
-        'accent-gradient':  'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-        'card-gradient':    'linear-gradient(135deg, rgba(26,29,46,0.8) 0%, rgba(14,16,32,0.8) 100%)',
-        'mesh-gradient':    'radial-gradient(at 40% 20%, hsla(265,80%,50%,0.15) 0px, transparent 50%), radial-gradient(at 80% 0%, hsla(230,80%,60%,0.1) 0px, transparent 50%), radial-gradient(at 0% 50%, hsla(280,80%,50%,0.1) 0px, transparent 50%)',
+        'hero-gradient':    'linear-gradient(135deg, #171716 0%, #262522 50%, #1f1e1d 100%)',
+        'brand-gradient':   'linear-gradient(135deg, #da7756 0%, #e0966d 100%)',
+        'accent-gradient':  'linear-gradient(135deg, #c55d3b 0%, #da7756 100%)',
+        'card-gradient':    'linear-gradient(135deg, rgba(38,37,34,0.9) 0%, rgba(31,30,29,0.9) 100%)',
+        'mesh-gradient':    'radial-gradient(at 40% 20%, hsla(18,70%,50%,0.08) 0px, transparent 50%), radial-gradient(at 80% 0%, hsla(30,60%,50%,0.06) 0px, transparent 50%), radial-gradient(at 0% 50%, hsla(15,70%,45%,0.06) 0px, transparent 50%)',
       },
       animation: {
         'fade-in':       'fadeIn 0.5s ease-in-out',
@@ -103,8 +104,8 @@ export default {
           '50%':      { transform: 'translateY(-20px)' },
         },
         pulseGlow: {
-          '0%, 100%': { boxShadow: '0 0 20px rgba(109, 75, 255, 0.35)' },
-          '50%':      { boxShadow: '0 0 40px rgba(109, 75, 255, 0.65)' },
+          '0%, 100%': { boxShadow: '0 0 20px rgba(218, 119, 86, 0.3)' },
+          '50%':      { boxShadow: '0 0 40px rgba(218, 119, 86, 0.5)' },
         },
         shimmer: {
           '0%':   { backgroundPosition: '-1000px 0' },
