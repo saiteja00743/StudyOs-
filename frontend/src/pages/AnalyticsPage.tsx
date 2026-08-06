@@ -14,23 +14,80 @@ import { useAuth } from '@/hooks/useAuth';
 import { Note } from '@/types/notes';
 import { Flashcard, PlannerTask, QuizAttempt } from '@/types/study';
 
-// ─── Mini Bar Chart ───────────────────────────────────────────
-function BarChart({ data, color = '#6d4bff', label }: { data: number[]; color?: string; label?: string }) {
+// ─── Mini Bar Chart (Glowing Capsules + Tooltips) ───────────────
+function BarChart({
+  data,
+  unit = '',
+  gradient = 'from-brand-700 via-brand-500 to-amber-400',
+  glowColor = 'rgba(218, 119, 86, 0.45)',
+  accentTextColor = 'text-brand-400',
+}: {
+  data: number[];
+  unit?: string;
+  gradient?: string;
+  glowColor?: string;
+  accentTextColor?: string;
+}) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const max = Math.max(...data, 1);
-  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
   return (
-    <div className="flex items-end gap-1.5 h-20">
-      {data.map((val, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-          <motion.div
-            initial={{ height: 0 }} animate={{ height: `${(val / max) * 72}px` }}
-            transition={{ delay: i * 0.05, duration: 0.5 }}
-            className="w-full rounded-t-lg min-h-[4px]"
-            style={{ backgroundColor: color, opacity: val > 0 ? 1 : 0.15 }}
-          />
-          <span className="text-2xs text-slate-500">{days[i]}</span>
-        </div>
-      ))}
+    <div className="pt-5 pb-1">
+      <div className="flex items-end gap-2.5 h-32 relative px-1">
+        {data.map((val, i) => {
+          const heightPercent = Math.max((val / max) * 100, 8);
+          const isHovered = hoveredIdx === i;
+
+          return (
+            <div
+              key={i}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              className="flex-1 flex flex-col items-center gap-2 relative group cursor-pointer"
+            >
+              {/* Floating Tooltip */}
+              {isHovered && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.9 }}
+                  className="absolute -top-9 z-20 px-2.5 py-1 rounded-xl bg-surface-800 border border-white/10 text-white font-bold text-2xs shadow-2xl whitespace-nowrap pointer-events-none flex items-center gap-1"
+                >
+                  <span className="text-stone-400 font-normal">{days[i]}:</span>
+                  <span className={cn('font-mono font-bold', accentTextColor)}>{val}{unit}</span>
+                </motion.div>
+              )}
+
+              {/* Recessed Track Container */}
+              <div className="w-full bg-white/5 hover:bg-white/10 rounded-2xl h-24 flex items-end p-1 transition-colors relative overflow-hidden border border-white/5">
+                {/* Glowing Capsule Bar */}
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: `${heightPercent}%` }}
+                  transition={{ delay: i * 0.05, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                  className={cn(
+                    'w-full rounded-xl bg-gradient-to-t transition-all duration-200',
+                    gradient,
+                    isHovered ? 'brightness-125 scale-[1.02]' : 'opacity-90'
+                  )}
+                  style={{
+                    boxShadow: isHovered ? `0 0 20px ${glowColor}` : `0 0 8px ${glowColor.replace('0.45', '0.15')}`,
+                  }}
+                />
+              </div>
+
+              {/* Day Label */}
+              <span className={cn(
+                'text-2xs font-semibold uppercase tracking-wider transition-colors',
+                isHovered ? 'text-white font-bold' : 'text-stone-500'
+              )}>
+                {days[i][0]}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -203,9 +260,15 @@ export function AnalyticsPage() {
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-brand-400" /> Study Hours This Week
             </h3>
-            <span className="text-2xs text-slate-500">Total: {studyHours.reduce((a, b) => a + b, 0).toFixed(1)}h</span>
+            <span className="text-2xs text-stone-400 font-mono bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">Total: {studyHours.reduce((a, b) => a + b, 0).toFixed(1)}h</span>
           </div>
-          <BarChart data={studyHours} color="#6d4bff" />
+          <BarChart
+            data={studyHours}
+            unit="h"
+            gradient="from-brand-700 via-brand-500 to-amber-400"
+            glowColor="rgba(218, 119, 86, 0.45)"
+            accentTextColor="text-brand-400"
+          />
         </div>
 
         {/* Quiz Performance */}
@@ -214,9 +277,15 @@ export function AnalyticsPage() {
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-cyan-400" /> Quiz Scores (Last 7 Days)
             </h3>
-            <span className="text-2xs text-slate-500">Avg: {quizScores.filter(Boolean).length ? Math.round(quizScores.filter(Boolean).reduce((a, b) => a + b, 0) / quizScores.filter(Boolean).length) : 0}%</span>
+            <span className="text-2xs text-stone-400 font-mono bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">Avg: {quizScores.filter(Boolean).length ? Math.round(quizScores.filter(Boolean).reduce((a, b) => a + b, 0) / quizScores.filter(Boolean).length) : 0}%</span>
           </div>
-          <BarChart data={quizScores} color="#06b6d4" />
+          <BarChart
+            data={quizScores}
+            unit="%"
+            gradient="from-cyan-600 via-emerald-500 to-teal-300"
+            glowColor="rgba(6, 182, 212, 0.45)"
+            accentTextColor="text-cyan-400"
+          />
         </div>
       </div>
 
