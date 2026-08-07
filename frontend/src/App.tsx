@@ -18,6 +18,8 @@ import { FlashcardsPage } from '@/pages/FlashcardsPage';
 import { PlannerPage } from '@/pages/PlannerPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { InterviewPage } from '@/pages/InterviewPage';
+import { RoadmapPage } from '@/pages/RoadmapPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { ROUTES } from '@/constants';
@@ -87,6 +89,8 @@ function App() {
                     <Route path={ROUTES.PLANNER}     element={<PlannerPage />} />
                     <Route path={ROUTES.ANALYTICS}   element={<AnalyticsPage />} />
                     <Route path={ROUTES.SETTINGS}     element={<SettingsPage />} />
+                    <Route path={ROUTES.INTERVIEW}    element={<InterviewPage />} />
+                    <Route path={ROUTES.ROADMAP}      element={<RoadmapPage />} />
                   </Route>
                 </Route>
 

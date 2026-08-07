@@ -89,3 +89,68 @@ export interface PomodoroSession {
   completed: boolean;
   started_at: string;
 }
+
+// ─── Interview Prep ───────────────────────────────────────────
+export type InterviewCategory =
+  | 'dsa'
+  | 'system_design'
+  | 'behavioral'
+  | 'frontend'
+  | 'backend'
+  | 'ml'
+  | 'sql'
+  | 'custom';
+
+export type ConfidenceLevel = 'low' | 'medium' | 'high';
+
+export interface InterviewQuestion {
+  id: string;
+  category: InterviewCategory;
+  difficulty: Difficulty;
+  question: string;
+  answer: string;
+  tips: string[];
+  tags: string[];
+}
+
+export interface InterviewAttempt {
+  questionId: string;
+  userAnswer: string;
+  confidence: ConfidenceLevel;
+  answeredAt: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  category: InterviewCategory;
+  difficulty: Difficulty;
+  totalQuestions: number;
+  attempts: InterviewAttempt[];
+  startedAt: string;
+  completedAt?: string;
+}
+
+// ─── Roadmap Tracker ─────────────────────────────────────────
+export interface RoadmapMilestone {
+  day: number;
+  label: string;
+}
+
+export interface RoadmapDay {
+  day: number;           // 1-indexed day number
+  date: string;          // ISO date string yyyy-MM-dd for that day
+  completed: boolean;
+  completedAt?: string;
+}
+
+export interface RoadmapGoal {
+  id: string;
+  title: string;
+  description?: string;
+  totalDays: number;
+  color: string;         // accent color hex
+  days: RoadmapDay[];
+  milestones: RoadmapMilestone[];
+  createdAt: string;
+  archivedAt?: string;
+}

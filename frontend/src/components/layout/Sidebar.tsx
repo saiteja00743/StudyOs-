@@ -15,6 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Mic,
+  Map,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
@@ -29,6 +31,8 @@ const NAV_ITEMS = [
   { icon: Layers,          label: 'Flashcards', path: ROUTES.FLASHCARDS, id: 'nav-flashcards' },
   { icon: Calendar,        label: 'Planner',    path: ROUTES.PLANNER,    id: 'nav-planner' },
   { icon: BarChart3,       label: 'Analytics',  path: ROUTES.ANALYTICS,  id: 'nav-analytics' },
+  { icon: Mic,             label: 'Interview',  path: ROUTES.INTERVIEW,  id: 'nav-interview' },
+  { icon: Map,             label: 'Roadmap',    path: ROUTES.ROADMAP,    id: 'nav-roadmap' },
 ] as const;
 
 const BOTTOM_ITEMS = [

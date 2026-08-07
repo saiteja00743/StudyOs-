@@ -18,6 +18,8 @@ export const ROUTES = {
   ANALYTICS: '/analytics',
   SETTINGS: '/settings',
   PROFILE: '/profile',
+  INTERVIEW: '/interview',
+  ROADMAP: '/roadmap',
 } as const;
 
 export const NAV_LINKS = [
