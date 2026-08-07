@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
+import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 
 const schema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -69,6 +70,16 @@ export function LoginPage() {
 
         {/* Card */}
         <div className="glass-strong rounded-3xl p-8 border border-white/8">
+          {/* Google OAuth */}
+          <GoogleAuthButton label="Continue with Google" />
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-white/10" />
+            <span className="text-xs text-slate-500 font-medium">or continue with email</span>
+            <div className="flex-1 h-px bg-white/10" />
+          </div>
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" id="login-form">
             {/* Email */}
             <div>

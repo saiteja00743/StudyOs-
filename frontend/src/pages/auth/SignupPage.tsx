@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
 import { cn } from '@/utils/cn';
+import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 
 // ─── Validation Schema ─────────────────────────────────────
 const schema = z.object({
@@ -173,7 +174,18 @@ export function SignupPage() {
               </p>
             </motion.div>
           ) : (
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" id="signup-form">
+            <>
+              {/* Google OAuth */}
+              <GoogleAuthButton label="Sign up with Google" />
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 my-5">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-xs text-slate-500 font-medium">or sign up with email</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" id="signup-form">
               {/* Full Name */}
               <InputField
                 id="signup-name"
@@ -304,6 +316,7 @@ export function SignupPage() {
                 )}
               </motion.button>
             </form>
+            </>
           )}
 
           {/* Login link */}
