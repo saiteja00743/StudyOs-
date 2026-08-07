@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AppNavbar } from '@/components/layout/AppNavbar';
 import { StreakModal } from '@/components/streak/StreakModal';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 /**
  * Authenticated app layout — Sidebar (left) + Main content (right).
@@ -36,7 +37,9 @@ export function AppLayout() {
           className="flex-1 overflow-y-auto p-3 sm:p-6 pb-20 md:pb-6"
           id="app-main-content"
         >
-          <Outlet />
+          <ErrorBoundary key={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

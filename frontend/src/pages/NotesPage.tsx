@@ -91,25 +91,33 @@ export function NotesPage() {
 
   // Filter
   const filtered = notes.filter((n) => {
+    const titleText = (n.title || '').toLowerCase();
+    const contentText = (n.content || '').toLowerCase();
+    const noteTags = Array.isArray(n.tags) ? n.tags : [];
+    const query = searchQuery.toLowerCase();
+
     const matchSearch =
       !searchQuery ||
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      titleText.includes(query) ||
+      contentText.includes(query) ||
+      noteTags.some((t) => typeof t === 'string' && t.toLowerCase().includes(query));
 
     const matchFolder =
       activeFolder === 'all' ? true
-      : activeFolder === 'starred' ? n.is_starred
-      : n.folder === activeFolder;
+      : activeFolder === 'starred' ? Boolean(n.is_starred)
+      : (n.folder || 'General') === activeFolder;
 
     return matchSearch && matchFolder;
   });
 
-  const formatDate = (iso: string) => {
+  const formatDate = (iso?: string) => {
+    if (!iso) return 'Just now';
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Just now';
     const now = new Date();
     const diff = now.getTime() - d.getTime();
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 0) return 'Just now';
+    if (diff < 3600000) return `${Math.max(1, Math.floor(diff / 60000))}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
@@ -258,9 +266,9 @@ export function NotesPage() {
                     <Sparkles className="absolute top-3 right-2 w-3 h-3 text-purple-400" />
                   )}
 
-                  <p className="text-xs font-semibold truncate pr-6 mb-1">{note.title}</p>
+                  <p className="text-xs font-semibold truncate pr-6 mb-1">{note.title || 'Untitled Note'}</p>
                   <p className="text-2xs text-slate-500 line-clamp-2 mb-2 leading-relaxed">
-                    {note.content.replace(/[#*`>_]/g, '').slice(0, 80)}...
+                    {(note.content || '').replace(/[#*`>_]/g, '').slice(0, 80) || 'Empty note...'}
                   </p>
 
                   <div className="flex items-center justify-between text-2xs text-slate-600">

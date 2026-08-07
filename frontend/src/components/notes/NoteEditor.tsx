@@ -79,15 +79,15 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
   // Seed state when note prop changes
   useEffect(() => {
     if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-      setFolder(note.folder);
-      setTags(note.tags);
-      setIsStarred(note.is_starred);
-      setWordCount(note.word_count);
-      setLastSavedTime(new Date(note.updated_at || Date.now()));
-      if (editor && note.content) {
-        editor.commands.setContent(note.content);
+      setTitle(note.title || '');
+      setContent(note.content || '');
+      setFolder(note.folder || 'General');
+      setTags(Array.isArray(note.tags) ? note.tags : []);
+      setIsStarred(Boolean(note.is_starred));
+      setWordCount(note.word_count || 0);
+      setLastSavedTime(note.updated_at ? new Date(note.updated_at) : new Date());
+      if (editor) {
+        editor.commands.setContent(note.content || '<p></p>');
       }
     } else {
       setTitle('');
@@ -106,7 +106,7 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
 
   // Word count & relative save time ticker
   useEffect(() => {
-    const text = editor ? editor.getText() : content;
+    const text = (editor ? editor.getText() : content) || '';
     setWordCount(text.split(/\s+/).filter(Boolean).length);
   }, [content, editor]);
 

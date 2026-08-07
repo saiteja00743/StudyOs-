@@ -12,7 +12,18 @@ export const notesService = {
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
     if (error) { console.error('notesService.getAll:', error.message); return []; }
-    return (data as Note[]) ?? [];
+    return ((data as Note[]) ?? []).map((n) => ({
+      ...n,
+      title: n.title || 'Untitled Note',
+      content: n.content || '',
+      folder: n.folder || 'General',
+      tags: Array.isArray(n.tags) ? n.tags : [],
+      is_starred: Boolean(n.is_starred),
+      is_ai_enhanced: Boolean(n.is_ai_enhanced),
+      word_count: n.word_count || 0,
+      created_at: n.created_at || new Date().toISOString(),
+      updated_at: n.updated_at || new Date().toISOString(),
+    }));
   },
 
   async getById(userId: string, id: string): Promise<Note | null> {
@@ -21,8 +32,20 @@ export const notesService = {
       .eq('user_id', userId)
       .eq('id', id)
       .single();
-    if (error) return null;
-    return data as Note;
+    if (error || !data) return null;
+    const n = data as Note;
+    return {
+      ...n,
+      title: n.title || 'Untitled Note',
+      content: n.content || '',
+      folder: n.folder || 'General',
+      tags: Array.isArray(n.tags) ? n.tags : [],
+      is_starred: Boolean(n.is_starred),
+      is_ai_enhanced: Boolean(n.is_ai_enhanced),
+      word_count: n.word_count || 0,
+      created_at: n.created_at || new Date().toISOString(),
+      updated_at: n.updated_at || new Date().toISOString(),
+    };
   },
 
   async create(userId: string, data: Partial<Note>): Promise<Note | null> {
