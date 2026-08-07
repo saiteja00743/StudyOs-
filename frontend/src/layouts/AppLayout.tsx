@@ -1,4 +1,5 @@
-import { Outlet } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AppNavbar } from '@/components/layout/AppNavbar';
 import { StreakModal } from '@/components/streak/StreakModal';
@@ -8,6 +9,14 @@ import { StreakModal } from '@/components/streak/StreakModal';
  * All protected pages render inside the <Outlet />.
  */
 export function AppLayout() {
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Reset scroll position to top on every page navigation
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pathname]);
+
   return (
     <div className="flex h-screen bg-surface-950 overflow-hidden" id="app-layout">
       {/* Streak Modal */}
@@ -23,6 +32,7 @@ export function AppLayout() {
 
         {/* Page content */}
         <main
+          ref={mainRef}
           className="flex-1 overflow-y-auto p-3 sm:p-6 pb-20 md:pb-6"
           id="app-main-content"
         >
@@ -32,3 +42,4 @@ export function AppLayout() {
     </div>
   );
 }
+
