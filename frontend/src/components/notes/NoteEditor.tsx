@@ -78,6 +78,7 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
 
   // Seed state when note prop changes
   useEffect(() => {
+    if (!editor) return; // editor is null in Tiptap 3 until EditorContent mounts
     if (note) {
       setTitle(note.title || '');
       setContent(note.content || '');
@@ -86,9 +87,7 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
       setIsStarred(Boolean(note.is_starred));
       setWordCount(note.word_count || 0);
       setLastSavedTime(note.updated_at ? new Date(note.updated_at) : new Date());
-      if (editor) {
-        editor.commands.setContent(note.content || '<p></p>');
-      }
+      try { editor.commands.setContent(note.content || '<p></p>'); } catch (_) { /* ignore */ }
     } else {
       setTitle('');
       setContent('');
@@ -97,9 +96,7 @@ export function NoteEditor({ note, onSave, onClose, userId }: NoteEditorProps) {
       setIsStarred(false);
       setWordCount(0);
       setLastSavedTime(null);
-      if (editor) {
-        editor.commands.setContent('<p></p>');
-      }
+      try { editor.commands.setContent('<p></p>'); } catch (_) { /* ignore */ }
     }
     setSaveState('idle');
   }, [note?.id, editor]);
@@ -222,9 +219,14 @@ Content: ${content}`,
 
   // Insert Sketch Drawing Image Data URL
   const handleSaveDrawing = (dataUrl: string) => {
-    if (editor) {
-      editor.chain().focus().setImage({ src: dataUrl }).run();
-    } else {
+    try {
+      if (editor) {
+        editor.chain().focus().setImage({ src: dataUrl }).run();
+      } else {
+        const imgTag = `<p><img src="${dataUrl}" alt="Handwritten Sketch" /></p>`;
+        setContent((prev) => prev + imgTag);
+      }
+    } catch (_) {
       const imgTag = `<p><img src="${dataUrl}" alt="Handwritten Sketch" /></p>`;
       setContent((prev) => prev + imgTag);
     }
@@ -259,15 +261,10 @@ Content: ${content}`,
     setTags((prev) => prev.filter((tag) => tag !== t));
   };
 
-  if (!note && !title) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center text-stone-500 p-8">
-        <Type className="w-12 h-12 mb-4 opacity-30" />
-        <p className="text-lg font-medium text-stone-400">Select a note to edit</p>
-        <p className="text-sm mt-1">Or create a new note to get started</p>
-      </div>
-    );
-  }
+  // NOTE: Do NOT early-return before EditorContent in Tiptap 3 — the editor
+  // only initializes when EditorContent is mounted. Show placeholder as overlay instead.
+  const showPlaceholder = !note && !title;
+
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
@@ -559,7 +556,16 @@ Content: ${content}`,
 
       {/* ── EDITOR & PREVIEW PANELS (Tiptap WYSIWYG Editor) ──────────────── */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/* Editor View */}
+        {/* No-note selected overlay — rendered OVER EditorContent so Tiptap always mounts */}
+        {showPlaceholder && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center text-stone-500 bg-surface-950/80 backdrop-blur-sm">
+            <Type className="w-12 h-12 mb-4 opacity-30" />
+            <p className="text-lg font-medium text-stone-400">Select a note to edit</p>
+            <p className="text-sm mt-1">Or create a new note to get started</p>
+          </div>
+        )}
+
+        {/* Editor View — always rendered so Tiptap 3 can fully initialize */}
         {(viewMode === 'edit' || viewMode === 'split') && (
           <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-y-auto px-6 py-4">
             <EditorContent editor={editor} />
