@@ -7,7 +7,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import chat, pdf, quiz
+from app.routers import chat, pdf, quiz, email
 
 app = FastAPI(
     title="StudyOS AI API",
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(pdf.router)
 app.include_router(quiz.router)
+app.include_router(email.router)
 
 @app.get("/")
 @app.get("/health")
