@@ -18,6 +18,7 @@ export interface Database {
           school: string | null;
           avatar_url: string | null;
           study_streak: number;
+          role: 'user' | 'admin';
           created_at: string;
           updated_at: string;
         };
@@ -28,6 +29,7 @@ export interface Database {
           school?: string | null;
           avatar_url?: string | null;
           study_streak?: number;
+          role?: 'user' | 'admin';
           created_at?: string;
           updated_at?: string;
         };
@@ -38,6 +40,7 @@ export interface Database {
           school?: string | null;
           avatar_url?: string | null;
           study_streak?: number;
+          role?: 'user' | 'admin';
           updated_at?: string;
         };
       };

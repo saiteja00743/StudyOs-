@@ -10,6 +10,7 @@ export interface Profile {
   school: string | null;
   avatar_url: string | null;
   study_streak: number;
+  role: 'user' | 'admin';
   created_at: string;
   updated_at?: string;
 }
@@ -100,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           school: '',
           avatar_url: authUser.user_metadata?.avatar_url || null,
           study_streak: 1,
+          role: 'user',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -116,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         school: '',
         avatar_url: null,
         study_streak: 1,
+        role: 'user',
         created_at: new Date().toISOString(),
       });
     }
@@ -240,6 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         school: fields.school || '',
         avatar_url: fields.avatar_url || null,
         study_streak: 1,
+        role: 'user',
         created_at: new Date().toISOString(),
         updated_at: payload.updated_at,
       };

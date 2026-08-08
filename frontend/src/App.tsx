@@ -21,7 +21,9 @@ import { SettingsPage } from '@/pages/SettingsPage';
 import { InterviewPage } from '@/pages/InterviewPage';
 import { RoadmapPage } from '@/pages/RoadmapPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { AdminRoute } from '@/components/auth/AdminRoute';
 import { AppLayout } from '@/layouts/AppLayout';
+import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { ROUTES } from '@/constants';
 
 const queryClient = new QueryClient({
@@ -93,6 +95,16 @@ function App() {
                     <Route path={ROUTES.ROADMAP}      element={<RoadmapPage />} />
                   </Route>
                 </Route>
+
+                {/* Admin-only route — separate from AppLayout */}
+                <Route
+                  path={ROUTES.ADMIN}
+                  element={
+                    <AdminRoute>
+                      <AdminDashboardPage />
+                    </AdminRoute>
+                  }
+                />
 
                 {/* 404 */}
                 <Route path="*" element={

@@ -20,6 +20,7 @@ export const ROUTES = {
   PROFILE: '/profile',
   INTERVIEW: '/interview',
   ROADMAP: '/roadmap',
+  ADMIN: '/admin',
 } as const;
 
 export const NAV_LINKS = [
