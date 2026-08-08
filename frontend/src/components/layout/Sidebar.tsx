@@ -17,6 +17,7 @@ import {
   LogOut,
   Mic,
   Map,
+  Shield,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/constants';
@@ -159,6 +160,25 @@ export function Sidebar() {
             {!collapsed && <span>{label}</span>}
           </NavLink>
         ))}
+
+        {/* Admin Panel link — only visible to admins */}
+        {profile?.role === 'admin' && (
+          <NavLink
+            to={ROUTES.ADMIN}
+            id="nav-admin"
+            className={({ isActive }) => cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group',
+              collapsed && 'justify-center',
+              isActive
+                ? 'bg-brand-500/15 text-brand-300 border border-brand-500/20'
+                : 'text-brand-400/70 hover:text-brand-300 hover:bg-brand-500/10 border border-brand-500/15'
+            )}
+            title={collapsed ? 'Admin Panel' : undefined}
+          >
+            <Shield className={cn('flex-shrink-0', collapsed ? 'w-5 h-5' : 'w-4 h-4')} />
+            {!collapsed && <span>Admin Panel</span>}
+          </NavLink>
+        )}
 
         {/* User profile */}
         <div className={cn(
