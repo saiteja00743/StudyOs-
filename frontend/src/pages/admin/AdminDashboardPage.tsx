@@ -7,7 +7,7 @@ import {
   FileText, FileSearch, Layers, MessageSquare,
   Calendar, TrendingUp, Activity, Shield,
   ChevronLeft, ChevronRight, Flame, Cpu,
-  Circle, CheckCircle2, Clock, BarChart3,
+  Circle, CheckCircle2, Clock, BarChart3, Mail, Send, CheckCircle, AlertCircle, X,
 } from 'lucide-react';
 import { rawFrom, supabase } from '@/services/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,7 +45,7 @@ interface RecentActivity {
   user_id: string;
 }
 
-type Tab = 'overview' | 'users' | 'content' | 'activity' | 'system';
+type Tab = 'overview' | 'users' | 'content' | 'activity' | 'system' | 'emails';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(iso: string) {
@@ -459,9 +459,234 @@ function SystemTab({ profile }: { profile: ReturnType<typeof useAuth>['profile']
   );
 }
 
+// ─── Emails Tab ───────────────────────────────────────────────────────────────
+const BADGE_OPTIONS = [
+  { label: '📢 Announcement', value: '📢 Announcement', tag: 'announcement' },
+  { label: '🎁 Special Offer', value: '🎁 Special Offer', tag: 'offer' },
+  { label: '🔥 Hot Deal', value: '🔥 Hot Deal', tag: 'deal' },
+  { label: '🎉 Discount', value: '🎉 Discount', tag: 'discount' },
+  { label: '🚀 New Feature', value: '🚀 New Feature', tag: 'feature' },
+  { label: '📚 Study Tip', value: '📚 Study Tip', tag: 'tip' },
+];
+
+interface SendResult {
+  sent: number;
+  failed: number;
+  total: number;
+  recipients: { email: string; status: string; error?: string }[];
+}
+
+function EmailsTab({ userCount, session }: { userCount: number; session: string | undefined }) {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [badge, setBadge] = useState(BADGE_OPTIONS[0]);
+  const [ctaText, setCtaText] = useState('Open StudyOS');
+  const [ctaUrl, setCtaUrl] = useState('https://studyos.dpdns.org/dashboard');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<SendResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '');
+
+  const handleSend = async () => {
+    if (!subject.trim() || !message.trim()) {
+      setError('Subject and message are required.');
+      return;
+    }
+    if (!session) { setError('No auth session found.'); return; }
+    setSending(true);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session}`,
+        },
+        body: JSON.stringify({
+          subject: subject.trim(),
+          message: message.trim(),
+          badge: badge.value,
+          cta_text: ctaText.trim(),
+          cta_url: ctaUrl.trim(),
+          tag: badge.tag,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Server error: ${res.status}`);
+      }
+      const data: SendResult = await res.json();
+      setResult(data);
+    } catch (e: any) {
+      setError(e.message || 'Failed to send emails. Check backend connection.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Composer card */}
+      <div className="glass rounded-2xl border border-white/6 overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              <Mail className="w-4 h-4 text-brand-400" />
+              Email Campaign Composer
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Will send to <span className="text-brand-400 font-semibold">{userCount} users</span>
+            </p>
+          </div>
+          <span className="text-xs bg-brand-500/10 border border-brand-500/20 text-brand-400 px-3 py-1.5 rounded-full font-semibold">
+            {userCount} recipients
+          </span>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Badge selector */}
+          <div>
+            <label className="text-xs font-semibold text-slate-400 block mb-2">Campaign Type</label>
+            <div className="flex flex-wrap gap-2">
+              {BADGE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setBadge(opt)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all',
+                    badge.value === opt.value
+                      ? 'bg-brand-500/20 border-brand-500/40 text-brand-300'
+                      : 'bg-white/4 border-white/8 text-slate-400 hover:border-white/20 hover:text-white'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div>
+            <label className="text-xs font-semibold text-slate-400 block mb-2">Subject Line</label>
+            <input
+              type="text"
+              placeholder="e.g. 🎁 50% off StudyOS Pro — This Week Only!"
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              className="w-full bg-white/4 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-brand-500/50 transition-colors"
+            />
+          </div>
+
+          {/* Message */}
+          <div>
+            <label className="text-xs font-semibold text-slate-400 block mb-2">Message Body</label>
+            <textarea
+              rows={6}
+              placeholder="Hi there!\n\nWe have an exciting offer just for you...\n\nHappy studying!"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              className="w-full bg-white/4 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-brand-500/50 transition-colors resize-none"
+            />
+          </div>
+
+          {/* CTA row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-2">Button Text</label>
+              <input
+                type="text"
+                value={ctaText}
+                onChange={e => setCtaText(e.target.value)}
+                className="w-full bg-white/4 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500/50 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-2">Button URL</label>
+              <input
+                type="text"
+                value={ctaUrl}
+                onChange={e => setCtaUrl(e.target.value)}
+                className="w-full bg-white/4 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500/50 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 bg-red-500/10 border border-red-500/25 rounded-xl px-4 py-3"
+            >
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-400">{error}</p>
+              <button onClick={() => setError(null)} className="ml-auto text-red-400/60 hover:text-red-400">
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+
+          {/* Send button */}
+          <button
+            onClick={handleSend}
+            disabled={sending || !subject.trim() || !message.trim()}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-brand-gradient text-white font-bold text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow"
+          >
+            {sending ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Sending to {userCount} users…</>
+            ) : (
+              <><Send className="w-4 h-4" /> Send to All Users</>  
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Result card */}
+      {result && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-2xl border border-white/6 overflow-hidden"
+        >
+          <div className="px-5 py-4 border-b border-white/5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm">Campaign Sent!</h3>
+              <p className="text-xs text-slate-500">
+                <span className="text-emerald-400 font-semibold">{result.sent} sent</span>
+                {result.failed > 0 && <>, <span className="text-red-400 font-semibold">{result.failed} failed</span></>}
+                {' '}of {result.total} total
+              </p>
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {result.recipients.map((r, i) => (
+              <div key={i} className="flex items-center justify-between px-5 py-2.5 border-b border-white/4 last:border-0">
+                <span className="text-xs font-mono text-slate-400">{r.email}</span>
+                <span className={cn(
+                  'text-xs font-semibold px-2 py-0.5 rounded-full',
+                  r.status === 'sent'
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-red-500/10 text-red-400'
+                )}>
+                  {r.status === 'sent' ? '✓ Sent' : '✗ Failed'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main AdminDashboardPage ───────────────────────────────────────────────────
 export function AdminDashboardPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, session } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -578,6 +803,7 @@ export function AdminDashboardPage() {
     { id: 'users',     label: 'Users',     icon: Users,            badge: stats?.totalUsers },
     { id: 'content',   label: 'Content',   icon: BarChart3 },
     { id: 'activity',  label: 'Activity',  icon: Activity,         badge: activity.length },
+    { id: 'emails',    label: 'Emails',    icon: Mail },
     { id: 'system',    label: 'System',    icon: Cpu },
   ];
 
@@ -757,6 +983,7 @@ export function AdminDashboardPage() {
               {activeTab === 'users'    && <UsersTab users={users} />}
               {activeTab === 'content'  && stats && <ContentTab stats={stats} />}
               {activeTab === 'activity' && <ActivityTab activity={activity} />}
+              {activeTab === 'emails'   && <EmailsTab userCount={users.length} session={session?.access_token} />}
               {activeTab === 'system'   && <SystemTab profile={profile} />}
             </motion.div>
           </AnimatePresence>
